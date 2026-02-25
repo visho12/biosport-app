@@ -1,9 +1,49 @@
 import streamlit as st
-st.set_page_config(
-    page_title="Bio Sport Pro Trainer",
-    page_icon="⚡",
-    layout="wide"
-)
+
+# 1. Configuración de página (EL GUARDIA DE SEGURIDAD)
+st.set_page_config(page_title="Bio Sport Pro Trainer", page_icon="🏋️‍♂️")
+
+# --- FUNCIONES DE CONTROL DE ACCESO ---
+def validar_usuario(usuario, clave):
+    usuarios_validos = {
+        "visho": "pro2026",
+        "socio": "bio2026"
+    }
+    return usuarios_validos.get(usuario) == clave
+
+def login():
+    if "autenticado" not in st.session_state:
+        st.session_state["autenticado"] = False
+
+    if not st.session_state["autenticado"]:
+        st.title("🔐 Acceso Bio Sport")
+        
+        with st.form("formulario_login"):
+            usuario = st.text_input("Usuario").lower().strip()
+            clave = st.text_input("Contraseña", type="password")
+            boton_entrar = st.form_submit_button("Entrar")
+            
+            if boton_entrar:
+                if validar_usuario(usuario, clave):
+                    st.session_state["autenticado"] = True
+                    st.session_state["usuario_actual"] = usuario
+                    st.rerun()
+                else:
+                    st.error("Usuario o contraseña incorrectos")
+        return False
+    return True
+
+# Si el usuario no ha puesto la clave, la app se detiene aquí.
+if not login():
+    st.stop()
+
+# --- SI LA CLAVE ES CORRECTA, LA APP CONTINÚA AQUÍ ---
+st.sidebar.write(f"👤 Usuario: **{st.session_state['usuario_actual']}**")
+if st.sidebar.button("Cerrar Sesión"):
+    st.session_state["autenticado"] = False
+    st.rerun()
+
+st.success(f"Bienvenido a tu sesión, {st.session_state['usuario_actual']}")
 import pandas as pd
 import math
 import time
@@ -595,6 +635,7 @@ elif menu == "8. 🎥 Videoteca":
     if st.button("Agregar"):
 
         st.session_state.biblioteca_videos[n_ej] = n_li; guardar_datos_disco(); st.rerun()
+
 
 
 
