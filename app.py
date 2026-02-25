@@ -7,7 +7,7 @@ st.set_page_config(page_title="Bio Sport Pro Trainer", page_icon="🏋️‍♂�
 def validar_usuario(usuario, clave):
     usuarios_validos = {
         "visho": "Bio2026",
-        "Eduardo2026": "Bio2026"
+        "Eduardo20": "Bio2026"
     }
     return usuarios_validos.get(usuario) == clave
 
@@ -635,6 +635,7 @@ elif menu == "8. 🎥 Videoteca":
     if st.button("Agregar"):
 
         st.session_state.biblioteca_videos[n_ej] = n_li; guardar_datos_disco(); st.rerun()
+
 
 
 
