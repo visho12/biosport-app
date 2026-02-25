@@ -1,7 +1,7 @@
 import streamlit as st
 st.set_page_config(
     page_title="Bio Sport Pro Trainer",
-    page_icon="🏋️‍♂️",
+    page_icon="⚡",
     layout="wide"
 )
 import pandas as pd
@@ -595,5 +595,6 @@ elif menu == "8. 🎥 Videoteca":
     if st.button("Agregar"):
 
         st.session_state.biblioteca_videos[n_ej] = n_li; guardar_datos_disco(); st.rerun()
+
 
 
