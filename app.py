@@ -24,7 +24,7 @@ st.set_page_config(page_title="Bio Sport Pro Trainer", layout="wide", page_icon=
 # --- FUNCIONES DE CONTROL DE ACCESO ---
 def validar_usuario(usuario, clave):
     usuarios_validos = {
-        "visho": "Bio2026"
+        "visho": "Bio2026",
         "eduardo": "Bio2026",
         "invitado": "invitado2"
     }
@@ -743,4 +743,5 @@ elif menu == "8. 🎥 Videoteca":
     n_li = c2.text_input("Enlace YouTube:")
     if st.button("Agregar"):
         st.session_state.biblioteca_videos[n_ej] = n_li; guardar_datos_disco(); st.rerun()
+
 
