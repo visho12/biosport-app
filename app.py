@@ -21,7 +21,7 @@ except ImportError:
 # =====================================================
 st.set_page_config(page_title="Bio Sport Pro Trainer", layout="wide", page_icon="🏋️‍♂️")
 
-# --- FUNCIONES DE CONTROL DE ACCESO ---
+# --- FUNCIONES DE CONTROL DE ACCESO (INTACTAS) ---
 def validar_usuario(usuario, clave):
     usuarios_validos = {
         "visho": "Bio2026",
@@ -310,7 +310,6 @@ def importar_historial_al_plan(cliente):
     for dia, lista in rutinas_temp.items():
         if lista:
             texto_unido = "\n".join(lista)
-            # Guarda los importados directamente en el bloque 2 (Desarrollo)
             nuevo_detalles[dia] = f"||{texto_unido}||" 
             if focos_temp[dia] != "Descanso":
                 nuevo_focos[dia] = focos_temp[dia]
@@ -344,7 +343,7 @@ def interpretar_tiempo(t):
 def fecha_es(f): return f.strftime("%d/%m/%Y")
 
 # =====================================================
-# 4. INICIALIZACIÓN
+# 4. INICIALIZACIÓN DE LA BASE DE DATOS
 # =====================================================
 datos = cargar_datos_disco()
 if 'db_clientes' not in st.session_state: st.session_state.db_clientes = datos["clientes"] if datos else {}
@@ -356,7 +355,7 @@ if 'notas_personales' not in st.session_state: st.session_state.notas_personales
 if 'cliente_activo' not in st.session_state: st.session_state.cliente_activo = None
 
 # =====================================================
-# 5. SIDEBAR
+# 5. SIDEBAR (MENÚ PRINCIPAL Y ATLETAS)
 # =====================================================
 st.sidebar.header("📇 Pro Trainer Bio Sport")
 lista = ["Crear Nuevo..."] + list(st.session_state.db_clientes.keys())
@@ -370,7 +369,7 @@ if sel == "Crear Nuevo...":
             guardar_datos_disco(); st.rerun()
 else:
     st.session_state.cliente_activo = sel
-    st.sidebar.info(f"👤 **{sel}**")
+    st.sidebar.info(f"👤 Atleta Seleccionado: **{sel}**")
     
     with st.sidebar.expander("⚙️ Gestión y Seguridad", expanded=False):
         if st.button("🗑️ Eliminar Atleta", type="primary"):
