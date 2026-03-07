@@ -21,7 +21,7 @@ except ImportError:
 # =====================================================
 st.set_page_config(page_title="Bio Sport Pro Trainer", layout="wide", page_icon="🏋️‍♂️")
 
-# --- FUNCIONES DE CONTROL DE ACCESO (INTACTAS) ---
+# --- FUNCIONES DE CONTROL DE ACCESO ---
 def validar_usuario(usuario, clave):
     usuarios_validos = {
         "visho": "Bio2026",
@@ -133,13 +133,10 @@ GUIA_ZONAS_CARDIO = pd.DataFrame({
 })
 
 # =====================================================
-# 3. MOTORES, PDF Y PERSISTENCIA
-# =====================================================
-# =====================================================
-# 3. MOTORES, PDF Y PERSISTENCIA
+# 3. MOTORES, PDF Y PERSISTENCIA (BLINDADOS)
 # =====================================================
 def cargar_datos_disco():
-    import os  # <-- Forzamos la importación local
+    import os
     import json
     if os.path.exists(ARCHIVO_DB):
         try:
@@ -148,7 +145,7 @@ def cargar_datos_disco():
     return None
 
 def guardar_datos_disco():
-    import json # <-- Forzamos la importación local
+    import json
     datos = {
         "clientes": st.session_state.db_clientes,
         "historial": st.session_state.historial_global,
@@ -349,7 +346,7 @@ def interpretar_tiempo(t):
 def fecha_es(f): return f.strftime("%d/%m/%Y")
 
 # =====================================================
-# 4. INICIALIZACIÓN DE LA BASE DE DATOS
+# 4. INICIALIZACIÓN
 # =====================================================
 datos = cargar_datos_disco()
 if 'db_clientes' not in st.session_state: st.session_state.db_clientes = datos["clientes"] if datos else {}
@@ -361,7 +358,7 @@ if 'notas_personales' not in st.session_state: st.session_state.notas_personales
 if 'cliente_activo' not in st.session_state: st.session_state.cliente_activo = None
 
 # =====================================================
-# 5. SIDEBAR (MENÚ PRINCIPAL Y ATLETAS)
+# 5. SIDEBAR
 # =====================================================
 st.sidebar.header("📇 Pro Trainer Bio Sport")
 lista = ["Crear Nuevo..."] + list(st.session_state.db_clientes.keys())
@@ -787,4 +784,3 @@ elif menu == "8. 🎥 Videoteca":
                 st.rerun()
         else:
             st.info("No hay ejercicios en la videoteca.")
-
