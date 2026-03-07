@@ -54,103 +54,83 @@ def login():
 
 # Si el usuario no ha puesto la clave, la app se detiene aquí.
 if not login():
-    st.sto# =====================================================
-# PESTAÑA 2: ENTRENAMIENTO
-# =====================================================
-elif menu == "2. 💪 Entrenamiento":
-    if not st.session_state.cliente_activo: st.stop()
-    c = st.session_state.cliente_activo
-    
-    fecha_sel = st.date_input("📅 Fecha de la Sesión:", date.today())
-    dia_nombre = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][fecha_sel.weekday()]
-    
-    plan_foco = st.session_state.planes_semanales.get(c, {}).get(dia_nombre, "Sin planificar")
-    plan_det = st.session_state.detalles_planes.get(c, {}).get(dia_nombre, "")
-    
-    if plan_foco == "Descanso":
-        st.success(f"🛌 **{dia_nombre}:** Descanso.")
-    else:
-        st.info(f"🔥 **{dia_nombre}:** {plan_foco}")
-        if plan_det:
-            with st.expander("👀 Ver Detalles Planificados para hoy", expanded=True):
-                partes = plan_det.split("||")
-                if len(partes) == 3:
-                    if partes[0].strip(): st.markdown("**1️⃣ Calentamiento:**\n" + partes[0])
-                    if partes[1].strip(): st.markdown("**2️⃣ Desarrollo:**\n" + partes[1])
-                    if partes[2].strip(): st.markdown("**3️⃣ Vuelta a la Calma:**\n" + partes[2])
-                else:
-                    st.text(plan_det)
-    st.divider()
-    
-    col_ent, col_timer = st.columns([3, 1])
-    with col_ent:
-        obj_sel = st.selectbox("🎯 Objetivo Sesión:", list(SUGERENCIAS_OBJETIVO.keys()))
-        sug = SUGERENCIAS_OBJETIVO[obj_sel]
-        
-        st.caption(f"Guía: {sug['Reps']} reps | Carga: {sug['RM']} del 1RM | Pausa: {sug['Pausa']} | RPE: {sug['RPE']}")
-
-        ej_sel = st.selectbox("Ejercicio:", list(st.session_state.biblioteca_videos.keys()) + ["✍️ Otro..."])
-        if ej_sel != "✍️ Otro...":
-            ultimo = obtener_ultimo_registro(c, ej_sel)
-            if ultimo: st.info(f"💡 Última vez: {ultimo['Series']}x{ultimo['Reps']} ({ultimo['Carga']}kg)")
-        
-        nom = st.text_input("Nombre:", value=ej_sel if ej_sel != "✍️ Otro..." else "")
-        vid = st.text_input("Link:", value=st.session_state.biblioteca_videos.get(ej_sel, ""))
-        
-        c1, c2, c3 = st.columns(3)
-        se = c1.number_input("Series", 1, 10, 4)
-        re = c2.number_input("Reps", 1, 50, 10)
-        kg = c3.number_input("Carga (kg)", 0.0)
-        pt = st.text_input("Pausa", value=sug["Pausa"].split("-")[0])
-        
-        if st.button("➕ Guardar Serie"):
-            st.session_state.historial_global.append({
-                "Cliente":c, "Fecha":fecha_es(fecha_sel), 
-                "Ejercicio":nom, "Series":se, "Reps":re, "Carga":kg, 
-                "Link":vid, "Tipo":"Fuerza", "Objetivo": obj_sel 
-            })
-            guardar_datos_disco(); st.rerun()
-            
-        hist = [h for h in st.session_state.historial_global if h['Cliente']==c and h['Fecha']==fecha_es(fecha_sel)]
-        if hist:
-            st.markdown("---")
-            st.subheader(f"📝 Registros del {fecha_es(fecha_sel)}")
-            txt_wsp = f"*ENTRENAMIENTO - {c}*\n*Fecha:* {fecha_es(fecha_sel)}\n\n"
-            
-            # --- AQUÍ ESTÁ LA MEJORA: BOTÓN DE ELIMINAR POR SERIE ---
-            for i, h in enumerate(st.session_state.historial_global):
-                if h['Cliente'] == c and h['Fecha'] == fecha_es(fecha_sel):
-                    col_info, col_del = st.columns([4, 1])
-                    col_info.write(f"✅ {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)")
-                    
-                    if col_del.button("🗑️ Eliminar", key=f"del_dia_{i}"):
-                        del st.session_state.historial_global[i]
-                        guardar_datos_disco()
-                        st.rerun()
-                        
-                    txt_wsp += f"🔹 {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)\n"
-            
-            st.text_area("📱 WhatsApp:", value=txt_wsp, height=150)
-
-    with col_timer:
-        st.write("⏱️ Cronómetro")
-        seg = interpretar_tiempo(pt)
-        if st.button(f"Iniciar {seg}s"):
-            ph = st.empty(); bar = st.progress(0)
-            for i in range(seg, -1, -1):
-                ph.metric("Restante", f"{i}s"); bar.progress(1-(i/seg)); time.sleep(1)
-            ph.success("¡Tiempo!")
-p()
+    st.stop()
 
 # --- SI LA CLAVE ES CORRECTA, LA APP CONTINÚA AQUÍ ---
-st.sidebar.write(f"👤 Usuario: **{st.session_state['usuario_actual']}**")
+st.sidebar.write(f"👤 Usuario: **{st.session_state['usuario_actual'].capitalize()}**")
 if st.sidebar.button("Cerrar Sesión"):
     st.session_state["autenticado"] = False
     st.rerun()
 
-st.success(f"Bienvenido a tu sesión, {st.session_state['usuario_actual']}")
+st.success(f"Bienvenido a tu sesión, {st.session_state['usuario_actual'].capitalize()}")
 
-#
+# =====================================================
+# 2. TABLAS TÉCNICAS Y VIDEOTECA
+# =====================================================
+
+VIDEOS_BASE = {
+    "Sentadilla Goblet": "https://www.youtube.com/watch?v=MeIiIdhvXT4",
+    "Sentadilla Libre": "https://www.youtube.com/watch?v=1OoMs3MaXI4",
+    "Flexiones": "https://www.youtube.com/watch?v=e_K0yT3t3IM",
+    "Jalón al Pecho": "https://www.youtube.com/watch?v=HSoHeSrp-j4",
+    "Peso Muerto Rumano": "https://www.youtube.com/watch?v=JCXUYuzwNrM",
+    "Plancha Abdominal": "https://www.youtube.com/watch?v=ASdvN_XEl_c",
+    "Press Banca": "https://www.youtube.com/watch?v=VmB1G1K7v94",
+    "Zancadas": "https://www.youtube.com/watch?v=0_ZmM-J7y_M",
+    "Remo Mancuerna": "https://www.youtube.com/watch?v=D7KaRcCIQms",
+    "Press Militar": "https://www.youtube.com/watch?v=M2rwvNhTOu0"
+}
+
+SUGERENCIAS_OBJETIVO = {
+    "Hipertrofia": {"Reps": "6-12", "Pausa": "1:30-2:00", "RPE": "7-9", "RM": "65-80%"},
+    "Fuerza Máxima": {"Reps": "1-5", "Pausa": "3:00-5:00", "RPE": "8-10", "RM": "85-100%"},
+    "Resistencia": {"Reps": "15-20+", "Pausa": "0:30-1:00", "RPE": "6-8", "RM": "< 60%"},
+    "Potencia": {"Reps": "1-5", "Pausa": "2:00-3:00", "RPE": "Explosivo", "RM": "30-70%"}
+}
+
+TABLA_BADILLO = pd.DataFrame({
+    "Zona": ["Fuerza Máx", "Fuerza-Hipertrofia", "Hipertrofia Alta", "Hipertrofia Media", "Resistencia"],
+    "% 1RM": ["85-100%", "80-85%", "70-80%", "60-75%", "<60%"],
+    "Reps": ["1-5", "5-7", "6-12", "12-20", "20+"],
+    "Descanso": ["3-5 min", "3 min", "2 min", "1-2 min", "<1 min"]
+})
+
+GUIAS_BOMPA = pd.DataFrame({
+    "Fase": ["Adaptación", "Hipertrofia", "Fuerza Máx", "Potencia", "Transición"],
+    "Intensidad": ["30-60%", "60-80%", "85-100%", "30-80%", "Baja"],
+    "Reps": ["12-20", "6-12", "1-5", "1-10", "Libre"],
+    "Descanso": ["1-2 min", "1-3 min", "3-5+ min", "3-5+ min", "Libre"]
+})
+
+GUIA_TEMPO = pd.DataFrame({
+    "Objetivo": ["Hipertrofia", "Fuerza Máx", "Potencia", "Resistencia"],
+    "Tempo": ["3-0-1-0", "X-0-X-0", "X-X-X", "2-0-2-0"],
+    "Explicación": ["Bajada lenta", "Máxima velocidad", "Explosivo", "Continuo"]
+})
+
+GUIA_DESCANSOS = pd.DataFrame({
+    "Objetivo": ["Fuerza/Potencia", "Hipertrofia", "Resistencia"],
+    "Tiempo": ["3 a 5+ min", "60 a 90 seg", "30 a 60 seg"],
+    "¿Por qué?": ["Recuperar ATP", "Estrés Metabólico", "Limpiar lactato"]
+})
+
+ESCALA_RPE = pd.DataFrame({
+    "RPE": [10, 9, 8, 7, 6],
+    "RIR": ["0 (Fallo)", "1", "2", "3", "4"],
+    "Sensación": ["Imposible más", "Podría 1 más", "Podría 2 más", "Podría 3 más", "Calentamiento"]
+})
+
+ESCALA_BORG = pd.DataFrame({
+    "Nivel": ["Muy Suave", "Suave", "Moderado", "Duro", "Máximo"],
+    "Escala 6-20": ["6-9", "10-11", "12-13", "14-16", "17-20"],
+    "Test Habla": ["Cantar", "Hablar", "Frases cortas", "Palabras", "Agonía"]
+})
+
+GUIA_ZONAS_CARDIO = pd.DataFrame({
+    "Zona": ["Z1 (Regenerativo)", "Z2 (Aeróbico)", "Z3 (Umbral)", "Z4 (VO2Max)", "Z5 (Anaeróbico)"],
+    "% VAM": ["< 60%", "60-75%", "75-90%", "95-105%", "> 110%"],
+    "Sensación": ["Muy fácil", "Fácil", "Duro", "Muy duro", "Agonía"]
+})
 
 # =====================================================
 # 3. MOTORES, PDF Y PERSISTENCIA
@@ -554,9 +534,20 @@ elif menu == "2. 💪 Entrenamiento":
             st.markdown("---")
             st.subheader(f"📝 Registros del {fecha_es(fecha_sel)}")
             txt_wsp = f"*ENTRENAMIENTO - {c}*\n*Fecha:* {fecha_es(fecha_sel)}\n\n"
-            for h in hist:
-                st.write(f"✅ {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)")
-                txt_wsp += f"🔹 {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)\n"
+            
+            # --- MEJORA: BOTÓN DE ELIMINAR POR SERIE ---
+            for i, h in enumerate(st.session_state.historial_global):
+                if h['Cliente'] == c and h['Fecha'] == fecha_es(fecha_sel):
+                    col_info, col_del = st.columns([4, 1])
+                    col_info.write(f"✅ {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)")
+                    
+                    if col_del.button("🗑️ Eliminar", key=f"del_dia_{i}"):
+                        del st.session_state.historial_global[i]
+                        guardar_datos_disco()
+                        st.rerun()
+                        
+                    txt_wsp += f"🔹 {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)\n"
+            
             st.text_area("📱 WhatsApp:", value=txt_wsp, height=150)
 
     with col_timer:
@@ -791,5 +782,3 @@ elif menu == "8. 🎥 Videoteca":
                 st.rerun()
         else:
             st.info("No hay ejercicios en la videoteca.")
-
-
