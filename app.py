@@ -135,7 +135,12 @@ GUIA_ZONAS_CARDIO = pd.DataFrame({
 # =====================================================
 # 3. MOTORES, PDF Y PERSISTENCIA
 # =====================================================
+# =====================================================
+# 3. MOTORES, PDF Y PERSISTENCIA
+# =====================================================
 def cargar_datos_disco():
+    import os  # <-- Forzamos la importación local
+    import json
     if os.path.exists(ARCHIVO_DB):
         try:
             with open(ARCHIVO_DB, "r", encoding="utf-8") as f: return json.load(f)
@@ -143,6 +148,7 @@ def cargar_datos_disco():
     return None
 
 def guardar_datos_disco():
+    import json # <-- Forzamos la importación local
     datos = {
         "clientes": st.session_state.db_clientes,
         "historial": st.session_state.historial_global,
@@ -781,3 +787,4 @@ elif menu == "8. 🎥 Videoteca":
                 st.rerun()
         else:
             st.info("No hay ejercicios en la videoteca.")
+
