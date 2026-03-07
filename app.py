@@ -123,7 +123,7 @@ ESCALA_RPE = pd.DataFrame({
 ESCALA_BORG = pd.DataFrame({
     "Nivel": ["Muy Suave", "Suave", "Moderado", "Duro", "Máximo"],
     "Escala 6-20": ["6-9", "10-11", "12-13", "14-16", "17-20"],
-    "Test Habla": ["Cantar", "Hablar", "Frases cortas", "Palabras", "Agonía"]
+    "Test Habla": ["Cantar", "Hablar", "Frases short", "Palabras", "Agonía"]
 })
 
 GUIA_ZONAS_CARDIO = pd.DataFrame({
