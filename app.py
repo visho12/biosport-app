@@ -27,7 +27,7 @@ def validar_usuario(usuario, clave):
     usuarios_validos = {
         "visho": "Bio2026",
         "eduardo": "Bio2026",
-        "invitado": "invitado2"
+        "jesus": "jesus2026"
     }
     return usuarios_validos.get(usuario) == clave
 
@@ -755,6 +755,7 @@ elif menu == "8. 🎥 Videoteca":
     n_li = c2.text_input("Enlace YouTube:")
     if st.button("Agregar"):
         st.session_state.biblioteca_videos[n_ej] = n_li; guardar_datos_disco(); st.rerun()
+
 
 
 
