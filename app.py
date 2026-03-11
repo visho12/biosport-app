@@ -552,14 +552,25 @@ elif menu == "2. 💪 Entrenamiento":
             })
             guardar_datos_disco(); st.rerun()
             
-        hist = [h for h in st.session_state.historial_global if h['Cliente']==c and h['Fecha']==fecha_es(fecha_sel)]
-        if hist:
+        hist_con_indices = [(i, h) for i, h in enumerate(st.session_state.historial_global) if h['Cliente']==c and h['Fecha']==fecha_es(fecha_sel)]
+        
+        if hist_con_indices:
             st.markdown("---")
             st.subheader(f"📝 Registros del {fecha_es(fecha_sel)}")
             txt_wsp = f"*ENTRENAMIENTO - {c}*\n*Fecha:* {fecha_es(fecha_sel)}\n\n"
-            for h in hist:
-                st.write(f"✅ {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)")
+            
+            for idx_real, h in hist_con_indices:
+                col_reg, col_btn = st.columns([4, 1])
+                with col_reg:
+                    st.write(f"✅ {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)")
+                with col_btn:
+                    if st.button("❌ Eliminar", key=f"del_hoy_{idx_real}"):
+                        del st.session_state.historial_global[idx_real]
+                        guardar_datos_disco()
+                        st.rerun()
+                
                 txt_wsp += f"🔹 {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)\n"
+                
             st.text_area("📱 WhatsApp:", value=txt_wsp, height=150)
 
     with col_timer:
@@ -744,6 +755,7 @@ elif menu == "8. 🎥 Videoteca":
     n_li = c2.text_input("Enlace YouTube:")
     if st.button("Agregar"):
         st.session_state.biblioteca_videos[n_ej] = n_li; guardar_datos_disco(); st.rerun()
+
 
 
 
