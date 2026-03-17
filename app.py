@@ -128,7 +128,6 @@ ESCALA_BORG = pd.DataFrame({
     "Escala Modificada (0-10)": ["0-2", "3", "4-5", "6-7", "8-9", "10"],
     "Test del Habla": ["Cantar", "Conversación fluida", "Frases cortas", "Palabras sueltas", "Apenas hablar", "Sin aliento / Agonía"]
 })
-})
 
 GUIA_ZONAS_CARDIO = pd.DataFrame({
     "Zona": ["Z1 (Regenerativo)", "Z2 (Aeróbico)", "Z3 (Umbral)", "Z4 (VO2Max)", "Z5 (Anaeróbico)"],
