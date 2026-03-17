@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import math
@@ -27,9 +26,7 @@ def validar_usuario(usuario, clave):
     usuarios_validos = {
         "visho": "Bio2026",
         "eduardo": "Bio2026",
-        "jesus": "jesus2026",
-        "aniet": "ani2026",
-        "daniela": "daniela2026",
+        "invitado": "invitado2"
     }
     return usuarios_validos.get(usuario) == clave
 
@@ -60,17 +57,19 @@ if not login():
     st.stop()
 
 # --- SI LA CLAVE ES CORRECTA, LA APP CONTINÚA AQUÍ ---
-st.sidebar.write(f"👤 Usuario: **{st.session_state['usuario_actual']}**")
+st.sidebar.write(f"👤 Usuario: **{st.session_state['usuario_actual'].capitalize()}**")
+
 if st.sidebar.button("Cerrar Sesión"):
-    st.session_state["autenticado"] = False
+    # Limpiamos absolutamente toda la memoria para que el siguiente usuario no vea nada
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
     st.rerun()
 
-st.success(f"Bienvenido a tu sesión, {st.session_state['usuario_actual']}")
+st.success(f"Bienvenido a tu sesión privada, {st.session_state['usuario_actual'].capitalize()}")
 
 # =====================================================
 # 2. TABLAS TÉCNICAS Y VIDEOTECA
 # =====================================================
-ARCHIVO_DB = "basedatos_entrenador.json"
 
 VIDEOS_BASE = {
     "Sentadilla Goblet": "https://www.youtube.com/watch?v=MeIiIdhvXT4",
@@ -86,10 +85,10 @@ VIDEOS_BASE = {
 }
 
 SUGERENCIAS_OBJETIVO = {
-    "Hipertrofia": {"Reps": "6-12", "Pausa": "1:30-2:00", "RPE": "7-9"},
-    "Fuerza Máxima": {"Reps": "1-5", "Pausa": "3:00-5:00", "RPE": "8-10"},
-    "Resistencia": {"Reps": "15-20+", "Pausa": "0:30-1:00", "RPE": "6-8"},
-    "Potencia": {"Reps": "1-5", "Pausa": "2:00-3:00", "RPE": "Explosivo"}
+    "Hipertrofia": {"Reps": "6-12", "Pausa": "1:30-2:00", "RPE": "7-9", "RM": "65-80%"},
+    "Fuerza Máxima": {"Reps": "1-5", "Pausa": "3:00-5:00", "RPE": "8-10", "RM": "85-100%"},
+    "Resistencia": {"Reps": "15-20+", "Pausa": "0:30-1:00", "RPE": "6-8", "RM": "< 60%"},
+    "Potencia": {"Reps": "1-5", "Pausa": "2:00-3:00", "RPE": "Explosivo", "RM": "30-70%"}
 }
 
 TABLA_BADILLO = pd.DataFrame({
@@ -137,16 +136,27 @@ GUIA_ZONAS_CARDIO = pd.DataFrame({
 })
 
 # =====================================================
-# 3. MOTORES, PDF Y PERSISTENCIA
+# 3. MOTORES, PDF Y PERSISTENCIA (SISTEMA PRIVADO)
 # =====================================================
+
+def obtener_archivo_db():
+    # Esta función crea un archivo único para cada usuario (ej. basedatos_visho.json)
+    usuario = st.session_state.get("usuario_actual", "default")
+    return f"basedatos_{usuario}.json"
+
 def cargar_datos_disco():
-    if os.path.exists(ARCHIVO_DB):
+    import os
+    import json
+    archivo_personal = obtener_archivo_db()
+    if os.path.exists(archivo_personal):
         try:
-            with open(ARCHIVO_DB, "r", encoding="utf-8") as f: return json.load(f)
+            with open(archivo_personal, "r", encoding="utf-8") as f: return json.load(f)
         except: return None
     return None
 
 def guardar_datos_disco():
+    import json
+    archivo_personal = obtener_archivo_db()
     datos = {
         "clientes": st.session_state.db_clientes,
         "historial": st.session_state.historial_global,
@@ -155,22 +165,20 @@ def guardar_datos_disco():
         "detalles_planes": st.session_state.detalles_planes, 
         "notas": st.session_state.notas_personales
     }
-    with open(ARCHIVO_DB, "w", encoding="utf-8") as f: json.dump(datos, f, indent=4)
+    with open(archivo_personal, "w", encoding="utf-8") as f: json.dump(datos, f, indent=4)
 
-# --- GENERADOR DE PDF PREMIUM ACTUALIZADO ---
+# --- GENERADOR DE PDF PREMIUM ---
 def generar_pdf_plan(cliente, plan_focos, plan_detalles):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
     
-    # Colores corporativos
-    COLOR_PRIMARIO = HexColor("#1E3A8A") # Azul Oscuro
-    COLOR_SECUNDARIO = HexColor("#F3F4F6") # Gris muy claro
-    COLOR_TEXTO = HexColor("#111827") # Casi negro
+    COLOR_PRIMARIO = HexColor("#1E3A8A")
+    COLOR_SECUNDARIO = HexColor("#F3F4F6")
+    COLOR_TEXTO = HexColor("#111827")
     
-    # --- ENCABEZADO ---
     c.setFillColor(COLOR_PRIMARIO)
-    c.rect(0, height - 100, width, 100, fill=1, stroke=0) # Barra azul superior
+    c.rect(0, height - 100, width, 100, fill=1, stroke=0)
     
     c.setFillColor(colors.white)
     c.setFont("Helvetica-Bold", 24)
@@ -182,13 +190,11 @@ def generar_pdf_plan(cliente, plan_focos, plan_detalles):
     c.setFont("Helvetica", 10)
     c.drawRightString(width - 50, height - 70, f"Fecha: {date.today().strftime('%d/%m/%Y')}")
     
-    # --- CUERPO ---
     y = height - 130
     dias_orden = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     
     c.setFillColor(COLOR_TEXTO)
     
-    # Mostrar el tipo de microciclo si existe
     tipo_sem = plan_focos.get("tipo_semana", "")
     if tipo_sem:
         c.setFont("Helvetica-Bold", 12)
@@ -200,16 +206,13 @@ def generar_pdf_plan(cliente, plan_focos, plan_detalles):
         foco = plan_focos.get(dia, "Descanso")
         detalle = plan_detalles.get(dia, "")
         
-        # Calcular espacio necesario (aprox)
         lineas = len(detalle.split('\n')) if detalle else 0
         altura_necesaria = 60 + (lineas * 14) 
         
-        # Salto de página si no cabe
         if y - altura_necesaria < 50:
             c.showPage()
             y = height - 50
         
-        # Dibujar Tarjeta del Día
         if foco != "Descanso":
             c.setFillColor(COLOR_SECUNDARIO)
             c.roundRect(50, y - 20, width - 100, 20, 4, fill=1, stroke=0)
@@ -222,18 +225,15 @@ def generar_pdf_plan(cliente, plan_focos, plan_detalles):
             c.setLineWidth(1)
             c.line(50, y - 20, width - 50, y - 20)
             
-            # Detalles (Lista dividida en bloques)
             y -= 35
             
             if detalle:
                 partes = detalle.split("||")
                 
-                # Si detecta el nuevo formato de 3 bloques
                 if len(partes) == 3: 
                     titulos_bloques = ["Calentamiento", "Desarrollo", "Vuelta a la Calma"]
                     for i, bloque in enumerate(partes):
                         if bloque.strip():
-                            # Salto de página preventivo dentro del día si el bloque es muy largo
                             if y < 60:
                                 c.showPage()
                                 y = height - 50
@@ -255,7 +255,6 @@ def generar_pdf_plan(cliente, plan_focos, plan_detalles):
                             y -= 5 
                             
                 else:
-                    # Formato antiguo (texto plano)
                     c.setFont("Helvetica", 11)
                     c.setFillColor(COLOR_TEXTO)
                     for linea in detalle.split('\n'):
@@ -271,16 +270,14 @@ def generar_pdf_plan(cliente, plan_focos, plan_detalles):
                 c.drawString(70, y, "(Sin detalles registrados)")
                 y -= 14
             
-            y -= 15 # Espacio extra entre días
+            y -= 15 
             
         else:
-            # Diseño minimalista para descanso
             c.setFillColor(colors.lightgrey)
             c.setFont("Helvetica-Oblique", 10)
             c.drawString(60, y - 10, f"{dia}: Descanso / Recuperación Activa")
             y -= 30
 
-    # --- PIE DE PÁGINA ---
     c.setFont("Helvetica", 9)
     c.setFillColor(colors.grey)
     c.drawCentredString(width / 2, 30, "La constancia es la clave del éxito. ¡Vamos por más!")
@@ -326,7 +323,6 @@ def importar_historial_al_plan(cliente):
     
     for dia, lista in rutinas_temp.items():
         if lista:
-            # Importa los datos como "Desarrollo" en el formato de 3 bloques
             texto_unido = "\n".join(lista)
             nuevo_detalles[dia] = f"||{texto_unido}||" 
             if focos_temp[dia] != "Descanso":
@@ -387,7 +383,7 @@ if sel == "Crear Nuevo...":
             guardar_datos_disco(); st.rerun()
 else:
     st.session_state.cliente_activo = sel
-    st.sidebar.info(f"👤 **{sel}**")
+    st.sidebar.info(f"👤 Atleta Seleccionado: **{sel}**")
     
     with st.sidebar.expander("⚙️ Gestión y Seguridad", expanded=False):
         if st.button("🗑️ Eliminar Atleta", type="primary"):
@@ -405,7 +401,7 @@ else:
             "planes": st.session_state.planes_semanales,
             "detalles": st.session_state.detalles_planes
         }, indent=4)
-        st.download_button(label="💾 Backup", data=json_str, file_name="backup.json", mime="application/json")
+        st.download_button(label="💾 Backup", data=json_str, file_name=f"backup_{st.session_state.get('usuario_actual', 'data')}.json", mime="application/json")
 
 with st.sidebar.expander("🧮 Calculadora RM", expanded=False):
     p_rm = st.number_input("Peso", 0.0, step=0.5); r_rm = st.number_input("Reps", 1, 20, 8)
@@ -419,10 +415,10 @@ with st.sidebar.expander("🧮 Calculadora RM", expanded=False):
 menu = st.sidebar.radio("Menú:", ["1. 📋 Ficha & Antropo", "2. 💪 Entrenamiento", "3. 🧠 Plan Semanal", "4. 🏃‍♂️ Cardio", "5. 📈 Progreso", "6. 📚 Guías Completas", "7. 📝 Notas", "8. 🎥 Videoteca"])
 
 # =====================================================
-# PESTAÑA 1: FICHA & ANTROPO E HISTORIAL
+# PESTAÑA 1: FICHA, ANTROPO & ANAMNESIS
 # =====================================================
 if menu == "1. 📋 Ficha & Antropo":
-    if not st.session_state.cliente_activo: st.warning("Selecciona atleta"); st.stop()
+    if not st.session_state.cliente_activo: st.warning("Selecciona un atleta en el menú lateral."); st.stop()
     c = st.session_state.cliente_activo
     d = st.session_state.db_clientes[c]
     
@@ -436,7 +432,7 @@ if menu == "1. 📋 Ficha & Antropo":
         ns = c4.selectbox("Sexo", ["Masculino", "Femenino"], index=0 if d.get('Sexo', 'Masculino')=="Masculino" else 1)
         if st.button("Actualizar Datos Básicos"):
             st.session_state.db_clientes[c].update({"Peso":np,"Talla":nt,"Edad":ne,"Sexo":ns})
-            guardar_datos_disco(); st.success("Guardado")
+            guardar_datos_disco(); st.success("Guardado exitosamente.")
 
     with t2:
         st.subheader("Cálculo de Grasa (Siri)")
@@ -465,28 +461,20 @@ if menu == "1. 📋 Ficha & Antropo":
 
     with t3:
         st.subheader("Historial Clínico y Deportivo")
-        
         col1, col2 = st.columns(2)
         fono = col1.text_input("📱 Teléfono / WhatsApp", value=d.get("Telefono", ""))
         emergencia = col2.text_input("🚨 Contacto de Emergencia", value=d.get("Emergencia", ""))
-        
         st.markdown("---")
-        
-        lesiones = st.text_area("🩹 Lesiones o Molestias Físicas (Actuales o pasadas)", value=d.get("Lesiones", ""), height=100, placeholder="Ej: Esguince de tobillo derecho hace 2 años. Dolor lumbar ocasional.")
-        enfermedades = st.text_area("💊 Enfermedades, Patologías o Medicamentos", value=d.get("Enfermedades", ""), height=80, placeholder="Ej: Hipertensión controlada, asma leve...")
-        
+        lesiones = st.text_area("🩹 Lesiones o Molestias Físicas (Actuales o pasadas)", value=d.get("Lesiones", ""), height=100)
+        enfermedades = st.text_area("💊 Enfermedades, Patologías o Medicamentos", value=d.get("Enfermedades", ""), height=80)
         st.markdown("---")
-        
         col3, col4 = st.columns(2)
         opciones_exp = ["Principiante", "Intermedio", "Avanzado"]
         exp_actual = d.get("Experiencia", "Principiante")
         if exp_actual not in opciones_exp: exp_actual = "Principiante"
-        
         experiencia = col3.selectbox("🏋️ Nivel de Experiencia", opciones_exp, index=opciones_exp.index(exp_actual))
-        objetivo_prin = col4.text_input("🎯 Objetivo Principal", value=d.get("Objetivo_Prin", ""), placeholder="Ej: Bajar de peso, hipertrofia, rendir en fútbol...")
-        
-        estilo_vida = st.text_area("💼 Estilo de Vida y Estrés", value=d.get("Estilo_Vida", ""), height=80, placeholder="¿Cómo es su trabajo? ¿Duerme bien? ¿Niveles de estrés?")
-        
+        objetivo_prin = col4.text_input("🎯 Objetivo Principal", value=d.get("Objetivo_Prin", ""))
+        estilo_vida = st.text_area("💼 Estilo de Vida y Estrés", value=d.get("Estilo_Vida", ""), height=80)
         if st.button("💾 Guardar Anamnesis"):
             st.session_state.db_clientes[c].update({
                 "Telefono": fono, "Emergencia": emergencia, 
@@ -494,8 +482,7 @@ if menu == "1. 📋 Ficha & Antropo":
                 "Experiencia": experiencia, "Objetivo_Prin": objetivo_prin,
                 "Estilo_Vida": estilo_vida
             })
-            guardar_datos_disco()
-            st.success("¡Historial clínico actualizado y protegido!")
+            guardar_datos_disco(); st.success("¡Historial clínico actualizado!")
 
 # =====================================================
 # PESTAÑA 2: ENTRENAMIENTO
@@ -516,7 +503,6 @@ elif menu == "2. 💪 Entrenamiento":
         st.info(f"🔥 **{dia_nombre}:** {plan_foco}")
         if plan_det:
             with st.expander("👀 Ver Detalles Planificados para hoy", expanded=True):
-                # Extraer formato 3 bloques
                 partes = plan_det.split("||")
                 if len(partes) == 3:
                     if partes[0].strip(): st.markdown("**1️⃣ Calentamiento:**\n" + partes[0])
@@ -530,7 +516,8 @@ elif menu == "2. 💪 Entrenamiento":
     with col_ent:
         obj_sel = st.selectbox("🎯 Objetivo Sesión:", list(SUGERENCIAS_OBJETIVO.keys()))
         sug = SUGERENCIAS_OBJETIVO[obj_sel]
-        st.caption(f"Guía: {sug['Reps']} reps | Pausa: {sug['Pausa']} | RPE: {sug['RPE']}")
+        
+        st.caption(f"Guía: {sug['Reps']} reps | Carga: {sug['RM']} del 1RM | Pausa: {sug['Pausa']} | RPE: {sug['RPE']}")
 
         ej_sel = st.selectbox("Ejercicio:", list(st.session_state.biblioteca_videos.keys()) + ["✍️ Otro..."])
         if ej_sel != "✍️ Otro...":
@@ -554,25 +541,24 @@ elif menu == "2. 💪 Entrenamiento":
             })
             guardar_datos_disco(); st.rerun()
             
-        hist_con_indices = [(i, h) for i, h in enumerate(st.session_state.historial_global) if h['Cliente']==c and h['Fecha']==fecha_es(fecha_sel)]
-        
-        if hist_con_indices:
+        hist = [h for h in st.session_state.historial_global if h['Cliente']==c and h['Fecha']==fecha_es(fecha_sel)]
+        if hist:
             st.markdown("---")
             st.subheader(f"📝 Registros del {fecha_es(fecha_sel)}")
             txt_wsp = f"*ENTRENAMIENTO - {c}*\n*Fecha:* {fecha_es(fecha_sel)}\n\n"
             
-            for idx_real, h in hist_con_indices:
-                col_reg, col_btn = st.columns([4, 1])
-                with col_reg:
-                    st.write(f"✅ {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)")
-                with col_btn:
-                    if st.button("❌ Eliminar", key=f"del_hoy_{idx_real}"):
-                        del st.session_state.historial_global[idx_real]
+            for i, h in enumerate(st.session_state.historial_global):
+                if h['Cliente'] == c and h['Fecha'] == fecha_es(fecha_sel):
+                    col_info, col_del = st.columns([4, 1])
+                    col_info.write(f"✅ {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)")
+                    
+                    if col_del.button("🗑️ Eliminar", key=f"del_dia_{i}"):
+                        del st.session_state.historial_global[i]
                         guardar_datos_disco()
                         st.rerun()
-                
-                txt_wsp += f"🔹 {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)\n"
-                
+                        
+                    txt_wsp += f"🔹 {h['Ejercicio']}: {h['Series']}x{h['Reps']} ({h['Carga']}kg)\n"
+            
             st.text_area("📱 WhatsApp:", value=txt_wsp, height=150)
 
     with col_timer:
@@ -599,21 +585,42 @@ elif menu == "3. 🧠 Plan Semanal":
             st.success("¡Datos cargados!")
             st.rerun()
             
-    # Selector de Tipo de Microciclo (Semana)
-    tipos_semana = ["Semana de Ajuste (Descarga)", "Semana de Carga (Desarrollo)", "Semana de Impacto (Choque)"]
-    if "tipo_semana" not in st.session_state.planes_semanales.get(c, {}):
-        tipo_actual = "Semana de Carga (Desarrollo)"
-    else:
-        tipo_actual = st.session_state.planes_semanales[c].get("tipo_semana", "Semana de Carga (Desarrollo)")
+    tipos_semana = ["Ajuste (Descarga)", "Carga (Desarrollo)", "Impacto (Choque)"]
+    tipo_guardado = st.session_state.planes_semanales.get(c, {}).get("tipo_semana", "Carga (Desarrollo)")
+    if tipo_guardado not in tipos_semana: 
+        tipo_guardado = "Carga (Desarrollo)"
         
-    microciclo_sel = st.selectbox("📊 Tipo de Microciclo actual:", tipos_semana, index=tipos_semana.index(tipo_actual))
+    microciclo_sel = st.select_slider(
+        "📊 Intensidad de la Semana (Microciclo):",
+        options=tipos_semana,
+        value=tipo_guardado
+    )
     
-    if "Ajuste" in microciclo_sel:
+    if microciclo_sel == "Ajuste (Descarga)":
         st.info("📉 **Objetivo:** Recuperación y técnica. Mantén el RPE entre 5 y 7. Volumen bajo.")
-    elif "Carga" in microciclo_sel:
+    elif microciclo_sel == "Carga (Desarrollo)":
         st.success("📈 **Objetivo:** Mejorar rendimiento. RPE entre 7 y 8.5. Volumen y cargas progresivas.")
     else:
         st.error("🔥 **Objetivo:** Sobrecarga máxima. RPE 9 a 10. Series al fallo o volumen muy alto.")
+
+    if st.button("⏬ Convertir rutina actual a Semana de Ajuste", type="primary"):
+        st.session_state.planes_semanales.setdefault(c, {})["tipo_semana"] = "Ajuste (Descarga)"
+        dias_mod = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+        detalles_act = st.session_state.detalles_planes.get(c, {})
+        for d_mod in dias_mod:
+            det_def_mod = detalles_act.get(d_mod, "||")
+            partes_mod = det_def_mod.split("||")
+            cal = partes_mod[0] if len(partes_mod) > 0 else ""
+            des = partes_mod[1] if len(partes_mod) > 1 else ""
+            vue = partes_mod[2] if len(partes_mod) > 2 else ""
+            if des.strip() and "⚠️ SEMANA DE DESCARGA" not in des:
+                des = f"⚠️ SEMANA DE DESCARGA: Trabajar con RPE 5-6 y bajar cargas un 20%.\n\n{des}"
+            detalles_act[d_mod] = f"{cal}||{des}||{vue}"
+        st.session_state.detalles_planes[c] = detalles_act
+        guardar_datos_disco()
+        st.success("¡Rutina convertida a Descarga exitosamente!")
+        time.sleep(1)
+        st.rerun()
 
     st.divider()
 
@@ -749,18 +756,38 @@ elif menu == "7. 📝 Notas":
 # PESTAÑA 8: VIDEOTECA
 # =====================================================
 elif menu == "8. 🎥 Videoteca":
-    st.title("Videoteca")
-    df_v = pd.DataFrame(list(st.session_state.biblioteca_videos.items()), columns=["Ejer","Link"])
+    st.title("Videoteca y Ejercicios")
+    
+    df_v = pd.DataFrame(list(st.session_state.biblioteca_videos.items()), columns=["Ejercicio", "Enlace"])
     st.dataframe(df_v, use_container_width=True)
-    c1, c2 = st.columns([1,2])
-    n_ej = c1.text_input("Nuevo Ejercicio:")
-    n_li = c2.text_input("Enlace YouTube:")
-    if st.button("Agregar"):
-        st.session_state.biblioteca_videos[n_ej] = n_li; guardar_datos_disco(); st.rerun()
+    
+    st.divider()
+    
+    col_add, col_del = st.columns(2)
+    
+    with col_add:
+        st.subheader("➕ Agregar Ejercicio")
+        n_ej = st.text_input("Nombre del Nuevo Ejercicio:")
+        n_li = st.text_input("Enlace (YouTube, Drive, etc):")
+        if st.button("Guardar Ejercicio", type="primary"):
+            if n_ej.strip():
+                st.session_state.biblioteca_videos[n_ej.strip()] = n_li.strip()
+                guardar_datos_disco()
+                st.rerun()
+            else:
+                st.warning("Escribe un nombre para el ejercicio.")
 
-
-
-
-
-
-
+    with col_del:
+        st.subheader("🗑️ Eliminar Ejercicio")
+        lista_ejercicios = list(st.session_state.biblioteca_videos.keys())
+        
+        if lista_ejercicios:
+            ej_a_borrar = st.selectbox("Selecciona el ejercicio a borrar:", lista_ejercicios)
+            if st.button("Eliminar Ejercicio"):
+                del st.session_state.biblioteca_videos[ej_a_borrar]
+                guardar_datos_disco()
+                st.success(f"'{ej_a_borrar}' eliminado correctamente.")
+                time.sleep(1)
+                st.rerun()
+        else:
+            st.info("No hay ejercicios en la videoteca.")
