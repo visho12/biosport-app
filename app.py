@@ -148,7 +148,7 @@ GUIA_ZONAS_CARDIO = pd.DataFrame({
 # 3. MOTORES, PDF Y PERSISTENCIA (AHORA CON GOOGLE SHEETS)
 # =====================================================
 
-URL_SHEET = "PEGA_AQUI_EL_LINK_DE_TU_GOOGLE_SHEET"
+URL_SHEET = "https://docs.google.com/spreadsheets/d/1NxZNe_1GjunjcpJs91tHJIAnZievTsNuVTTFe6uMqik/edit?gid=0#gid=0"
 
 def get_gsheets_client():
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -194,8 +194,8 @@ def guardar_datos_disco():
             cell.value = chunks[i]
         sheet.update_cells(cell_list)
         
-    except Exception as e:
-        st.sidebar.error("⚠️ Error guardando en la nube. Revisa tu conexión.")
+   except Exception as e:
+        st.sidebar.error(f"⚠️ Error guardando en la nube: {e}")
 
 # --- GENERADOR DE PDF PREMIUM ---
 def generar_pdf_plan(cliente, plan_focos, plan_detalles):
