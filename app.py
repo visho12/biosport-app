@@ -148,7 +148,6 @@ URL_SHEET = "https://docs.google.com/spreadsheets/d/1NxZNe_1GjunjcpJs91tHJIAnZie
 
 def get_gsheets_client():
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    # Lee los secretos que configuramos en Streamlit Cloud
     creds_info = dict(st.secrets["gcp_service_account"])
     credentials = Credentials.from_service_account_info(creds_info, scopes=scopes)
     return gspread.authorize(credentials)
@@ -157,7 +156,6 @@ def cargar_datos_disco():
     try:
         client = get_gsheets_client()
         sheet = client.open_by_url(URL_SHEET).sheet1
-        # Traemos toda la columna A y unimos los fragmentos
         col_values = sheet.col_values(1) 
         if col_values:
             json_str = "".join(col_values)
@@ -181,7 +179,6 @@ def guardar_datos_disco():
         client = get_gsheets_client()
         sheet = client.open_by_url(URL_SHEET).sheet1
         
-        # Google Sheets tiene un límite por celda. Dividimos la info en bloques seguros.
         chunks = [json_str[i:i+40000] for i in range(0, len(json_str), 40000)]
         
         sheet.clear()
@@ -190,7 +187,7 @@ def guardar_datos_disco():
             cell.value = chunks[i]
         sheet.update_cells(cell_list)
         
-except Exception as e:
+    except Exception as e:
         st.sidebar.error(f"⚠️ Error guardando en la nube: {e}")
 
 # --- GENERADOR DE PDF PREMIUM ---
