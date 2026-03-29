@@ -194,7 +194,7 @@ def guardar_datos_disco():
             cell.value = chunks[i]
         sheet.update_cells(cell_list)
         
-   except Exception as e:
+except Exception as e:
         st.sidebar.error(f"⚠️ Error guardando en la nube: {e}")
 
 # --- GENERADOR DE PDF PREMIUM ---
