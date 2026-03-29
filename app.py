@@ -5,6 +5,8 @@ import time
 import json
 import os
 import io
+import gspread
+from google.oauth2.service_account import Credentials
 from datetime import date, datetime, timedelta
 
 # Intentamos importar reportlab.
@@ -142,33 +144,58 @@ GUIA_ZONAS_CARDIO = pd.DataFrame({
 # 3. MOTORES, PDF Y PERSISTENCIA (SISTEMA PRIVADO)
 # =====================================================
 
-def obtener_archivo_db():
-    # Esta función crea un archivo único para cada usuario (ej. basedatos_visho.json)
-    usuario = st.session_state.get("usuario_actual", "default")
-    return f"basedatos_{usuario}.json"
+# =====================================================
+# 3. MOTORES, PDF Y PERSISTENCIA (AHORA CON GOOGLE SHEETS)
+# =====================================================
+
+URL_SHEET = "PEGA_AQUI_EL_LINK_DE_TU_GOOGLE_SHEET"
+
+def get_gsheets_client():
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    # Lee los secretos que configuramos en Streamlit Cloud
+    creds_info = dict(st.secrets["gcp_service_account"])
+    credentials = Credentials.from_service_account_info(creds_info, scopes=scopes)
+    return gspread.authorize(credentials)
 
 def cargar_datos_disco():
-    import os
-    import json
-    archivo_personal = obtener_archivo_db()
-    if os.path.exists(archivo_personal):
-        try:
-            with open(archivo_personal, "r", encoding="utf-8") as f: return json.load(f)
-        except: return None
+    try:
+        client = get_gsheets_client()
+        sheet = client.open_by_url(URL_SHEET).sheet1
+        # Traemos toda la columna A y unimos los fragmentos
+        col_values = sheet.col_values(1) 
+        if col_values:
+            json_str = "".join(col_values)
+            return json.loads(json_str)
+    except Exception as e:
+        print(f"La base de datos aún está vacía o hubo un error: {e}")
     return None
 
 def guardar_datos_disco():
-    import json
-    archivo_personal = obtener_archivo_db()
-    datos = {
-        "clientes": st.session_state.db_clientes,
-        "historial": st.session_state.historial_global,
-        "videos": st.session_state.biblioteca_videos,
-        "planes": st.session_state.planes_semanales,
-        "detalles_planes": st.session_state.detalles_planes, 
-        "notas": st.session_state.notas_personales
-    }
-    with open(archivo_personal, "w", encoding="utf-8") as f: json.dump(datos, f, indent=4)
+    try:
+        datos = {
+            "clientes": st.session_state.db_clientes,
+            "historial": st.session_state.historial_global,
+            "videos": st.session_state.biblioteca_videos,
+            "planes": st.session_state.planes_semanales,
+            "detalles_planes": st.session_state.detalles_planes, 
+            "notas": st.session_state.notas_personales
+        }
+        json_str = json.dumps(datos)
+        
+        client = get_gsheets_client()
+        sheet = client.open_by_url(URL_SHEET).sheet1
+        
+        # Google Sheets tiene un límite por celda. Dividimos la info en bloques seguros.
+        chunks = [json_str[i:i+40000] for i in range(0, len(json_str), 40000)]
+        
+        sheet.clear()
+        cell_list = sheet.range(1, 1, len(chunks), 1)
+        for i, cell in enumerate(cell_list):
+            cell.value = chunks[i]
+        sheet.update_cells(cell_list)
+        
+    except Exception as e:
+        st.sidebar.error("⚠️ Error guardando en la nube. Revisa tu conexión.")
 
 # --- GENERADOR DE PDF PREMIUM ---
 def generar_pdf_plan(cliente, plan_focos, plan_detalles):
