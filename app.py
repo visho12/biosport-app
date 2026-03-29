@@ -153,18 +153,31 @@ def get_gsheets_client():
     return gspread.authorize(credentials)
 
 def cargar_datos_disco():
+    # Identificamos qué entrenador acaba de iniciar sesión
+    usuario = st.session_state.get("usuario_actual", "default")
     try:
         client = get_gsheets_client()
-        sheet = client.open_by_url(URL_SHEET).sheet1
-        col_values = sheet.col_values(1) 
+        sheet = client.open_by_url(URL_SHEET)
+        
+        # Intentamos buscar la pestaña con el nombre exacto del usuario
+        try:
+            worksheet = sheet.worksheet(usuario)
+        except:
+            # Si el entrenador es nuevo y no tiene pestaña, ¡se la creamos automáticamente!
+            worksheet = sheet.add_worksheet(title=usuario, rows="100", cols="20")
+            return None
+            
+        # Traemos toda la información solo de SU pestaña
+        col_values = worksheet.col_values(1) 
         if col_values:
             json_str = "".join(col_values)
             return json.loads(json_str)
     except Exception as e:
-        print(f"La base de datos aún está vacía o hubo un error: {e}")
+        print(f"Error cargando datos: {e}")
     return None
 
 def guardar_datos_disco():
+    usuario = st.session_state.get("usuario_actual", "default")
     try:
         datos = {
             "clientes": st.session_state.db_clientes,
@@ -177,15 +190,20 @@ def guardar_datos_disco():
         json_str = json.dumps(datos)
         
         client = get_gsheets_client()
-        sheet = client.open_by_url(URL_SHEET).sheet1
+        sheet = client.open_by_url(URL_SHEET)
         
+        try:
+            worksheet = sheet.worksheet(usuario)
+        except:
+            worksheet = sheet.add_worksheet(title=usuario, rows="100", cols="20")
+            
         chunks = [json_str[i:i+40000] for i in range(0, len(json_str), 40000)]
         
-        sheet.clear()
-        cell_list = sheet.range(1, 1, len(chunks), 1)
+        worksheet.clear()
+        cell_list = worksheet.range(1, 1, len(chunks), 1)
         for i, cell in enumerate(cell_list):
             cell.value = chunks[i]
-        sheet.update_cells(cell_list)
+        worksheet.update_cells(cell_list)
         
     except Exception as e:
         st.sidebar.error(f"⚠️ Error guardando en la nube: {e}")
