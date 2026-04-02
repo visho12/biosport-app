@@ -9,6 +9,16 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import date, datetime, timedelta
 
+# --- AGREGADO PARA DANTE (IA) ---
+import google.generativeai as genai
+
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    modelo_dante = genai.GenerativeModel('gemini-1.5-flash')
+except Exception as e:
+    pass # Si hay error con la llave, Dante no despierta, pero la app no se cae.
+# --------------------------------
+
 # Intentamos importar reportlab.
 try:
     from reportlab.pdfgen import canvas
@@ -664,7 +674,39 @@ elif menu == "3. 🧠 Plan Semanal":
         st.rerun()
 
     st.divider()
+# --- ZONA DE DANTE (ASISTENTE IA) ---
+    with st.expander("🤖 Consultar a Dante (Asistente IA)"):
+        st.write("Dante leerá la ficha médica y de experiencia de tu atleta para darte una sugerencia personalizada.")
+        
+        # Extraemos los datos del cliente para que Dante sepa con quién trabaja
+        datos_ficha = st.session_state.db_clientes.get(c, {})
+        perfil = f"Edad: {datos_ficha.get('Edad', 'N/A')}, Sexo: {datos_ficha.get('Sexo', 'N/A')}, "
+        perfil += f"Experiencia: {datos_ficha.get('Experiencia', 'N/A')}, Objetivo: {datos_ficha.get('Objetivo_Prin', 'N/A')}, "
+        perfil += f"Lesiones/Molestias: {datos_ficha.get('Lesiones', 'Ninguna')}."
 
+        c_dia, c_btn = st.columns([2, 1])
+        dia_dante = c_dia.selectbox("¿Para qué día/enfoque necesitas ideas?", ["Pierna", "Pecho/Hombro", "Espalda", "Glúteo", "Full Body", "Cardio"])
+        
+        if c_btn.button("✨ Preguntarle a Dante"):
+            with st.spinner("Dante está analizando la ficha del atleta..."):
+                prompt = f"""
+                Eres Dante, un entrenador personal de élite y asistente experto en biomecánica que trabaja en la plataforma 'Bio Sport'.
+                Tu cliente actual tiene este perfil: {perfil}
+                Tu tarea: Sugiere una rutina corta y efectiva enfocada en: {dia_dante}.
+                Debes respetar su nivel de experiencia y, sobre todo, EVITAR agravar cualquier lesión mencionada.
+                Entrega tu respuesta estructurada obligatoriamente en 3 bloques (sin mucho texto de relleno):
+                1️⃣ Calentamiento
+                2️⃣ Desarrollo (Bloque Principal)
+                3️⃣ Vuelta a la Calma
+                Sé profesional, motivador y directo.
+                """
+                try:
+                    respuesta = modelo_dante.generate_content(prompt)
+                    st.success("¡Dante ha respondido!")
+                    st.markdown(respuesta.text)
+                except Exception as e:
+                    st.error(f"Dante tuvo un problema al pensar: {e}")
+    # ------------------------------------
     opciones = ["Descanso", "Pierna", "Pecho/Hombro", "Espalda", "Glúteo", "Full Body", "Torso", "Brazo", "Cardio", "Hipertrofia", "Fuerza Máxima", "Entrenamiento Realizado"]
     dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     
