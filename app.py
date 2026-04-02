@@ -16,7 +16,8 @@ try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     modelo_dante = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    pass # Si hay error con la llave, Dante no despierta, pero la app no se cae.
+    st.error(f"⚠️ Error despertando a Dante: {e}")
+    modelo_dante = None
 # --------------------------------
 
 # Intentamos importar reportlab.
