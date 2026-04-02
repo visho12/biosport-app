@@ -12,13 +12,28 @@ from datetime import date, datetime, timedelta
 # --- AGREGADO PARA DANTE (IA) ---
 import google.generativeai as genai
 
+# --- AGREGADO PARA DANTE (IA) ---
+import google.generativeai as genai
+
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    modelo_dante = genai.GenerativeModel('gemini-pro')
+    
+    # 1. Le pedimos a Google su lista secreta de cerebros que saben escribir rutinas
+    modelos_validos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    
+    # 2. Agarramos el primer cerebro compatible de esa lista automáticamente
+    if modelos_validos:
+        cerebro_elegido = modelos_validos[0]
+        modelo_dante = genai.GenerativeModel(cerebro_elegido)
+    else:
+        modelo_dante = None
+        st.error("No se encontraron modelos de IA compatibles en tu cuenta.")
+        
 except Exception as e:
     st.error(f"⚠️ Error despertando a Dante: {e}")
     modelo_dante = None
 # --------------------------------
+
 
 # Intentamos importar reportlab.
 try:
