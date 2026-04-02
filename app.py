@@ -14,7 +14,7 @@ import google.generativeai as genai
 
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    modelo_dante = genai.GenerativeModel('gemini-1.5-flash')
+    modelo_dante = genai.GenerativeModel('gemini-pro')
 except Exception as e:
     st.error(f"⚠️ Error despertando a Dante: {e}")
     modelo_dante = None
