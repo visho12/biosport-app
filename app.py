@@ -12,9 +12,6 @@ from datetime import date, datetime, timedelta
 # --- AGREGADO PARA DANTE (IA) ---
 import google.generativeai as genai
 
-# --- AGREGADO PARA DANTE (IA) ---
-import google.generativeai as genai
-
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
@@ -167,7 +164,7 @@ GUIA_ZONAS_CARDIO = pd.DataFrame({
 })
 
 # =====================================================
-# 3. MOTORES, PDF Y PERSISTENCIA (AHORA CON GOOGLE SHEETS)
+# 3. MOTORES, PDF Y PERSISTENCIA
 # =====================================================
 
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1NxZNe_1GjunjcpJs91tHJIAnZievTsNuVTTFe6uMqik/edit?gid=0#gid=0"
@@ -233,6 +230,43 @@ def guardar_datos_disco():
         
     except Exception as e:
         st.sidebar.error(f"⚠️ Error guardando en la nube: {e}")
+
+# =====================================================
+# NUEVA FUNCIÓN: AUDITORÍA INVISIBLE PARA COBROS
+# =====================================================
+def registrar_auditoria_cobro(nombre_alumno):
+    """Registra de forma silenciosa la creación de un alumno para el cobro mensual."""
+    usuario = st.session_state.get("usuario_actual", "desconocido")
+    
+    # Si eres tú quien lo registra, no se anota en la lista de cobros
+    if usuario == "visho":
+        return
+
+    try:
+        client = get_gsheets_client()
+        sheet = client.open_by_url(URL_SHEET)
+        nombre_hoja = "Auditoria_Cobros"
+
+        # 1. Intentamos abrir la hoja. Si no existe, la creamos con encabezados.
+        try:
+            worksheet = sheet.worksheet(nombre_hoja)
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = sheet.add_worksheet(title=nombre_hoja, rows="1000", cols="4")
+            worksheet.append_row(["Fecha Registro", "Preparador", "Nombre Alumno", "Estado Pago"])
+
+        # 2. Verificamos si este alumno ya fue registrado por este mismo preparador
+        registros = worksheet.get_all_values()
+        for fila in registros:
+            if len(fila) >= 3:
+                if fila[1].lower() == usuario.lower() and fila[2].lower() == nombre_alumno.lower():
+                    return # Ya está registrado, no hacemos nada
+
+        # 3. Si es un registro nuevo, anotamos los datos
+        fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
+        worksheet.append_row([fecha_actual, usuario.capitalize(), nombre_alumno, "Pendiente"])
+        
+    except Exception as e:
+        print(f"Error en auditoría silenciosa: {e}")
 
 # --- GENERADOR DE PDF PREMIUM ---
 def generar_pdf_plan(cliente, plan_focos, plan_detalles):
@@ -446,8 +480,18 @@ if sel == "Crear Nuevo...":
     nom = st.sidebar.text_input("Nombre:")
     if st.sidebar.button("Guardar Atleta"):
         if nom:
-            st.session_state.db_clientes[nom] = {"Peso":70, "Talla":170, "Edad":25, "Sexo":"Masculino"}
-            guardar_datos_disco(); st.rerun()
+            nom_limpio = nom.strip()
+            # Validamos que no sobreescriba a uno existente
+            if nom_limpio not in st.session_state.db_clientes:
+                st.session_state.db_clientes[nom_limpio] = {"Peso":70, "Talla":170, "Edad":25, "Sexo":"Masculino"}
+                guardar_datos_disco()
+                
+                # ¡AQUÍ SE ACTIVA LA AUDITORÍA INVISIBLE!
+                registrar_auditoria_cobro(nom_limpio)
+                
+                st.rerun()
+            else:
+                st.sidebar.warning("Ese atleta ya existe.")
 else:
     st.session_state.cliente_activo = sel
     st.sidebar.info(f"👤 Atleta Seleccionado: **{sel}**")
