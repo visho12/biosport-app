@@ -52,6 +52,7 @@ def validar_usuario(usuario, clave):
         "visho": "Bio2026",
         "eduardo": "Bio2026",
         "davidp": "Davidp2026",
+        "clemente": "Clemente2026",
     }
     return usuarios_validos.get(usuario) == clave
 
