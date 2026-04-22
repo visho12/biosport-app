@@ -982,5 +982,72 @@ elif menu == "8. 🎥 Videoteca":
 # =====================================================
 # PESTAÑA SECRETA: PANEL ADMIN
 # =====================================================
-elif menu == "👑 Panel Admin":
-    mostrar_panel_admin()
+# =====================================================
+# PANEL DE ADMINISTRADOR (SÓLO PARA VISHO)
+# =====================================================
+def mostrar_panel_admin():
+    st.title("👑 Panel de Control Bio Sport")
+    st.write("Resumen de alumnos activos y cálculo automático de mensualidades.")
+    
+    with st.spinner("Calculando cobros en tiempo real..."):
+        try:
+            client = get_gsheets_client()
+            sheet = client.open_by_url(URL_SHEET)
+            
+            # --- DICCIONARIO DE TARIFAS PERSONALIZADAS ---
+            # "por_alumno": multiplica sus alumnos por el valor.
+            # "fijo": ignora los alumnos y cobra la cuota plana.
+            reglas_cobro = {
+                "eduardo": {"tipo": "por_alumno", "valor": 2500},
+                "davidp":  {"tipo": "fijo",       "valor": 10000}, # Trato mensual cerrado
+                "clemente":{"tipo": "por_alumno", "valor": 2500}
+            }
+            # ---------------------------------------------
+            
+            datos_cobro = []
+            total_global = 0
+            
+            for preparador, regla in reglas_cobro.items():
+                try:
+                    ws = sheet.worksheet(preparador)
+                    col_values = ws.col_values(1)
+                    if col_values:
+                        json_data = json.loads("".join(col_values))
+                        num_alumnos = len(json_data.get("clientes", {}))
+                        
+                        # --- MOTOR DE CÁLCULO SEGÚN EL TRATO ---
+                        if regla["tipo"] == "por_alumno":
+                            monto = num_alumnos * regla["valor"]
+                            tipo_trato = f"${regla['valor']:,} x alumno".replace(",", ".")
+                        elif regla["tipo"] == "fijo":
+                            monto = regla["valor"]
+                            tipo_trato = "Cuota Fija Mensual"
+                        # ---------------------------------------
+                        
+                        datos_cobro.append({
+                            "Preparador": preparador.capitalize(),
+                            "Alumnos Activos": num_alumnos,
+                            "Tipo de Trato": tipo_trato,
+                            "Monto a Cobrar ($)": f"${monto:,}".replace(",", ".")
+                        })
+                        total_global += monto
+                except:
+                    continue # Si el preparador no tiene pestaña aún, lo saltamos
+            
+            if datos_cobro:
+                df_cobros = pd.DataFrame(datos_cobro)
+                
+                # Métricas rápidas
+                c1, c2 = st.columns(2)
+                c1.metric("Alumnos Totales en App", sum(d['Alumnos Activos'] for d in datos_cobro))
+                c2.metric("Total a Recaudar", f"${total_global:,}".replace(",", "."))
+                
+                st.divider()
+                st.table(df_cobros)
+                
+                st.info("💡 Puedes cambiar las tarifas de cada entrenador en la sección 'reglas_cobro' del código fuente.")
+            else:
+                st.warning("No hay datos de otros preparadores registrados aún.")
+                
+        except Exception as e:
+            st.error(f"Error cargando el panel: {e}")
