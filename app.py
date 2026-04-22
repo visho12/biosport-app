@@ -232,8 +232,11 @@ def guardar_datos_disco():
 # =====================================================
 # NUEVA FUNCIÓN: AUDITORÍA INVISIBLE PARA COBROS
 # =====================================================
+# =====================================================
+# NUEVA FUNCIÓN: AUDITORÍA INVISIBLE (CON CALENDARIO AUTOMÁTICO)
+# =====================================================
 def registrar_auditoria_cobro(nombre_alumno):
-    """Registra de forma silenciosa la creación de un alumno para el cobro mensual."""
+    """Registra de forma silenciosa la creación de un alumno para el cobro mensual, separando por mes."""
     usuario = st.session_state.get("usuario_actual", "desconocido")
     
     # Si eres tú quien lo registra, no se anota en la lista de cobros
@@ -243,23 +246,31 @@ def registrar_auditoria_cobro(nombre_alumno):
     try:
         client = get_gsheets_client()
         sheet = client.open_by_url(URL_SHEET)
-        nombre_hoja = "Auditoria_Cobros"
+        
+        # --- MAGIA DEL CALENDARIO AUTOMÁTICO ---
+        meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+        mes_actual = meses[datetime.now().month - 1] # Averigua en qué mes estamos hoy
+        ano_actual = datetime.now().year # Averigua el año actual
+        
+        # Arma el nombre de la pestaña (Ejemplo: "Auditoria_Abril_2026")
+        nombre_hoja = f"Auditoria_{mes_actual}_{ano_actual}"
+        # ---------------------------------------
 
-        # 1. Intentamos abrir la hoja. Si no existe, la creamos con encabezados.
+        # 1. Intentamos abrir la hoja de ESTE MES. Si no existe, la creamos limpiecita.
         try:
             worksheet = sheet.worksheet(nombre_hoja)
         except gspread.exceptions.WorksheetNotFound:
             worksheet = sheet.add_worksheet(title=nombre_hoja, rows="1000", cols="4")
             worksheet.append_row(["Fecha Registro", "Preparador", "Nombre Alumno", "Estado Pago"])
 
-        # 2. Verificamos si este alumno ya fue registrado por este mismo preparador
+        # 2. Verificamos si este alumno ya fue registrado por este preparador EN ESTE MES
         registros = worksheet.get_all_values()
         for fila in registros:
             if len(fila) >= 3:
                 if fila[1].lower() == usuario.lower() and fila[2].lower() == nombre_alumno.lower():
-                    return # Ya está registrado, no hacemos nada
+                    return # Ya está registrado en este mes, no hacemos nada
 
-        # 3. Si es un registro nuevo, anotamos los datos
+        # 3. Si es un registro nuevo en este mes, anotamos los datos
         fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
         worksheet.append_row([fecha_actual, usuario.capitalize(), nombre_alumno, "Pendiente"])
         
