@@ -230,9 +230,6 @@ def guardar_datos_disco():
         st.sidebar.error(f"⚠️ Error guardando en la nube: {e}")
 
 # =====================================================
-# NUEVA FUNCIÓN: AUDITORÍA INVISIBLE PARA COBROS
-# =====================================================
-# =====================================================
 # NUEVA FUNCIÓN: AUDITORÍA INVISIBLE (CON CALENDARIO AUTOMÁTICO)
 # =====================================================
 def registrar_auditoria_cobro(nombre_alumno):
@@ -259,7 +256,7 @@ def registrar_auditoria_cobro(nombre_alumno):
         # 1. Intentamos abrir la hoja de ESTE MES. Si no existe, la creamos limpiecita.
         try:
             worksheet = sheet.worksheet(nombre_hoja)
-        except gspread.exceptions.WorksheetNotFound:
+        except:
             worksheet = sheet.add_worksheet(title=nombre_hoja, rows="1000", cols="4")
             worksheet.append_row(["Fecha Registro", "Preparador", "Nombre Alumno", "Estado Pago"])
 
