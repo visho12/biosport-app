@@ -494,7 +494,54 @@ if sel == "Crear Nuevo...":
                 
                 # ¡AQUÍ SE ACTIVA LA AUDITORÍA INVISIBLE!
                 registrar_auditoria_cobro(nom_limpio)
+                def mostrar_panel_admin():
+    st.title("👑 Panel de Control Bio Sport")
+    st.write("Aquí puedes ver el resumen de alumnos activos de cada preparador para el cobro mensual.")
+    
+    with st.spinner("Calculando cobros en tiempo real..."):
+        try:
+            client = get_gsheets_client()
+            sheet = client.open_by_url(URL_SHEET)
+            
+            # Lista de usuarios a los que les cobras (puedes añadir más aquí)
+            preparadores = ["eduardo", "davidp", "clemente"]
+            datos_cobro = []
+            total_global = 0
+            
+            for p in preparadores:
+                try:
+                    ws = sheet.worksheet(p)
+                    col_values = ws.col_values(1)
+                    if col_values:
+                        json_data = json.loads("".join(col_values))
+                        num_alumnos = len(json_data.get("clientes", {}))
+                        monto = num_alumnos * 2000
+                        datos_cobro.append({
+                            "Preparador": p.capitalize(),
+                            "Alumnos Activos": num_alumnos,
+                            "Monto a Cobrar ($)": f"${monto:,}".replace(",", ".")
+                        })
+                        total_global += monto
+                except:
+                    continue # Si el preparador no tiene pestaña aún, lo saltamos
+            
+            if datos_cobro:
+                df_cobros = pd.DataFrame(datos_cobro)
                 
+                # Métricas rápidas
+                c1, c2 = st.columns(2)
+                c1.metric("Alumnos Totales", sum(d['Alumnos Activos'] for d in datos_cobro))
+                c2.metric("Total por Cobrar", f"${total_global:,}".replace(",", "."))
+                
+                st.divider()
+                st.table(df_cobros)
+                
+                st.info("💡 Consejo: Los montos se calculan sobre alumnos existentes hoy en las fichas de cada entrenador.")
+            else:
+                st.warning("No hay datos de otros preparadores registrados aún.")
+                
+        except Exception as e:
+            st.error(f"Error cargando el panel: {e}")
                 st.rerun()
             else:
                 st.sidebar.warning("Ese atleta ya existe.")
@@ -529,7 +576,13 @@ with st.sidebar.expander("🧮 Calculadora RM", expanded=False):
         with c1: st.caption(f"90%: {rm*0.9:.1f}"); st.caption(f"80%: {rm*0.8:.1f}"); st.caption(f"70%: {rm*0.7:.1f}")
         with c2: st.caption(f"60%: {rm*0.6:.1f}"); st.caption(f"50%: {rm*0.5:.1f}"); st.caption(f"40%: {rm*0.4:.1f}")
 
-menu = st.sidebar.radio("Menú:", ["1. 📋 Ficha & Antropo", "2. 💪 Entrenamiento", "3. 🧠 Plan Semanal", "4. 🏃‍♂️ Cardio", "5. 📈 Progreso", "6. 📚 Guías Completas", "7. 📝 Notas", "8. 🎥 Videoteca"])
+# --- MENÚ DINÁMICO (SÓLO VISHO VE EL PANEL) ---
+opciones_menu = ["1. 📋 Ficha & Antropo", "2. 💪 Entrenamiento", "3. 🧠 Plan Semanal", "4. 🏃‍♂️ Cardio", "5. 📈 Progreso", "6. 📚 Guías Completas", "7. 📝 Notas", "8. 🎥 Videoteca"]
+
+if st.session_state['usuario_actual'] == "visho":
+    opciones_menu.append("👑 Panel Admin")
+
+menu = st.sidebar.radio("Menú:", opciones_menu)
 
 # =====================================================
 # PESTAÑA 1: FICHA, ANTROPO & ANAMNESIS
@@ -940,3 +993,8 @@ elif menu == "8. 🎥 Videoteca":
                 st.rerun()
         else:
             st.info("No hay ejercicios en la videoteca.")
+# =====================================================
+# PESTAÑA SECRETA: PANEL ADMIN
+# =====================================================
+elif menu == "👑 Panel Admin":
+    mostrar_panel_admin()
