@@ -980,9 +980,6 @@ elif menu == "8. 🎥 Videoteca":
             st.info("No hay ejercicios en la videoteca.")
 
 # =====================================================
-# PESTAÑA SECRETA: PANEL ADMIN
-# =====================================================
-# =====================================================
 # PANEL DE ADMINISTRADOR (SÓLO PARA VISHO)
 # =====================================================
 def mostrar_panel_admin():
@@ -1051,3 +1048,7 @@ def mostrar_panel_admin():
                 
         except Exception as e:
             st.error(f"Error cargando el panel: {e}")
+
+# --- ¡ESTA ES LA LLAVE DE ENCENDIDO QUE FALTABA! ---
+elif menu == "👑 Panel Admin":
+    mostrar_panel_admin()
