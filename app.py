@@ -255,7 +255,6 @@ def registrar_auditoria_cobro(nombre_alumno):
     except Exception as e:
         print(f"Error en auditoría: {e}")
 
-# ---> AQUÍ ESTÁ LA FUNCIÓN DEL PANEL ADMIN REUBICADA <---
 def mostrar_panel_admin():
     st.title("👑 Panel de Control Bio Sport")
     st.write("Resumen de alumnos activos y cálculo automático de mensualidades.")
@@ -590,7 +589,7 @@ if menu == "1. 📋 Ficha & Antropo":
     
     t1, t2, t3 = st.tabs(["📝 Datos Básicos", "📏 Antropometría", "🏥 Anamnesis"])
     
-   with t1:
+    with t1:
         c1, c2, c3, c4 = st.columns(4)
         np = c1.number_input("Peso (kg)", value=float(d.get('Peso', 70)))
         nt = c2.number_input("Talla (cm)", value=float(d.get('Talla', 170)))
@@ -904,7 +903,7 @@ elif menu == "4. 🏃‍♂️ Cardio":
             guardar_datos_disco(); st.rerun()
 
 # =====================================================
-# PESTAÑA 5: PROGRESO
+# PESTAÑA 5: PROGRESO (¡NUEVA INTELIGENCIA!)
 # =====================================================
 elif menu == "5. 📈 Progreso":
     if not st.session_state.cliente_activo: st.stop()
