@@ -483,20 +483,33 @@ elif menu == "1. 📋 Ficha & Antropo":
                 """, unsafe_allow_html=True)
                 # -----------------------------------------------------
 
-    with t3:
+   with t3:
+        st.subheader("Historial Clínico y Deportivo")
         col1, col2 = st.columns(2)
-        fono = col1.text_input("📱 Teléfono", value=d.get("Telefono", ""))
-        emergencia = col2.text_input("🚨 Contacto Emergencia", value=d.get("Emergencia", ""))
-        lesiones = st.text_area("🩹 Lesiones o Molestias Físicas", value=d.get("Lesiones", ""), height=80)
-        enfermedades = st.text_area("💊 Patologías o Medicamentos", value=d.get("Enfermedades", ""), height=80)
+        fono = col1.text_input("📱 Teléfono / WhatsApp", value=d.get("Telefono", ""))
+        emergencia = col2.text_input("🚨 Contacto de Emergencia", value=d.get("Emergencia", ""))
+        st.markdown("---")
+        lesiones = st.text_area("🩹 Lesiones o Molestias Físicas (Actuales o pasadas)", value=d.get("Lesiones", ""), height=100)
+        enfermedades = st.text_area("💊 Enfermedades, Patologías o Medicamentos", value=d.get("Enfermedades", ""), height=80)
+        st.markdown("---")
         col3, col4 = st.columns(2)
         opciones_exp = ["Principiante", "Intermedio", "Avanzado"]
         exp_actual = d.get("Experiencia", "Principiante")
-        experiencia = col3.selectbox("🏋️ Experiencia", opciones_exp, index=opciones_exp.index(exp_actual) if exp_actual in opciones_exp else 0)
+        if exp_actual not in opciones_exp: exp_actual = "Principiante"
+        experiencia = col3.selectbox("🏋️ Nivel de Experiencia", opciones_exp, index=opciones_exp.index(exp_actual))
         objetivo_prin = col4.text_input("🎯 Objetivo Principal", value=d.get("Objetivo_Prin", ""))
-        if st.button("Guardar Anamnesis"):
-            st.session_state.db_clientes[c].update({"Telefono": fono, "Emergencia": emergencia, "Lesiones": lesiones, "Enfermedades": enfermedades, "Experiencia": experiencia, "Objetivo_Prin": objetivo_prin})
-            guardar_datos_disco(); st.toast("Anamnesis guardada correctamente", icon="🏥")
+        
+        estilo_vida = st.text_area("💼 Estilo de Vida y Estrés", value=d.get("Estilo_Vida", ""), height=80)
+        
+        if st.button("💾 Guardar Anamnesis", type="primary"):
+            st.session_state.db_clientes[c].update({
+                "Telefono": fono, "Emergencia": emergencia, 
+                "Lesiones": lesiones, "Enfermedades": enfermedades,
+                "Experiencia": experiencia, "Objetivo_Prin": objetivo_prin,
+                "Estilo_Vida": estilo_vida
+            })
+            guardar_datos_disco()
+            st.toast("¡Historial clínico actualizado correctamente!", icon="🏥")
 
 # =====================================================
 # PESTAÑA 2: ENTRENAMIENTO
