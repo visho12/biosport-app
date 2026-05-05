@@ -289,14 +289,55 @@ def importar_historial_al_plan(cliente):
     return True
 
 def calcular_1rm(p, r): return p * (1 + (r / 30))
-def calcular_jackson_3(edad, sexo, s3): return (495 / (1.10938 - (0.0008267 * s3) + (0.0000016 * (s3**2)) - (0.0002574 * edad)) - 450) if sexo == "Masculino" else (495 / (1.0994921 - (0.0009929 * s3) + (0.0000023 * (s3**2)) - (0.0001392 * edad)) - 450)
-def calcular_durnin(edad, sexo, s4): c, m = (1.1631, 0.0632) if sexo == "Masculino" else (1.1599, 0.0717); return (495 / (c - (m * math.log10(s4)))) - 450
+
+def calcular_durnin(edad, sexo, s4): 
+    c, m = (1.1631, 0.0632) if sexo == "Masculino" else (1.1599, 0.0717)
+    return (495 / (c - (m * math.log10(s4)))) - 450
+
+# --- NUEVA FUNCIÓN EVALUADORA DE COMPOSICIÓN CORPORAL (TERMINOLOGÍA CLÍNICA) ---
+def evaluar_grasa(edad, sexo, grasa):
+    # Definición de umbrales según tablas de referencia (adaptadas a rangos de edad)
+    if sexo == "Masculino":
+        if edad <= 24: thresholds = [3, 9, 19, 23]
+        elif edad <= 29: thresholds = [3, 10, 20, 24]
+        elif edad <= 34: thresholds = [3, 11, 21, 25]
+        elif edad <= 39: thresholds = [3, 12, 22, 26]
+        elif edad <= 44: thresholds = [3, 13, 23, 27]
+        elif edad <= 49: thresholds = [3, 15, 25, 28]
+        elif edad <= 54: thresholds = [3, 17, 26, 29]
+        elif edad <= 59: thresholds = [3, 19, 28, 30]
+        else: thresholds = [3, 20, 29, 31]
+    else: # Femenino
+        if edad <= 24: thresholds = [8, 15, 25, 30]
+        elif edad <= 29: thresholds = [8, 16, 26, 31]
+        elif edad <= 34: thresholds = [8, 17, 27, 32]
+        elif edad <= 39: thresholds = [8, 19, 28, 33]
+        elif edad <= 44: thresholds = [8, 21, 29, 34]
+        elif edad <= 49: thresholds = [8, 23, 31, 36]
+        elif edad <= 54: thresholds = [8, 25, 33, 37]
+        elif edad <= 59: thresholds = [8, 26, 34, 38]
+        else: thresholds = [8, 27, 35, 39]
+
+    # Evaluación y asignación de color basada en terminología de composición corporal
+    if grasa <= thresholds[0]: 
+        return "Grasa Esencial", "#FF4B4B"        # Nivel mínimo de supervivencia
+    elif grasa <= thresholds[1]: 
+        return "Compartimento Graso Disminuido", "#00C853" # Nivel atlético/bajo
+    elif grasa <= thresholds[2]: 
+        return "Compartimento Graso Adecuado", "#00BFFF"   # Rango saludable general
+    elif grasa <= thresholds[3]: 
+        return "Compartimento Graso Aumentado", "#FFD700"  # Exceso leve
+    else: 
+        return "Grasa Muy Aumentada", "#DC143C"            # Exceso significativo
+# -------------------------------------------------------------------------------
+
 def interpretar_tiempo(t):
     try:
         t = str(t).strip()
         if ":" in t: return int(t.split(":")[0]) * 60 + int(t.split(":")[1])
         return int(float(t) * 60) if float(t) < 10 else int(float(t))
     except: return 90
+
 def fecha_es(f): return f.strftime("%d/%m/%Y")
 
 # =====================================================
@@ -413,26 +454,34 @@ elif menu == "1. 📋 Ficha & Antropo":
             st.caption("Basado en la fórmula de Tanaka: 208 - (0.7 × Edad). Ideal para programar zonas de cardio de manera segura.")
 
     with t2:
-        st.subheader("Cálculo de Grasa (Siri)")
-        metodo = st.radio("Protocolo:", ["Jackson (3 Pliegues)", "Durnin (4 Pliegues)"], horizontal=True)
+        st.subheader("Cálculo de Grasa (Durnin 4 Pliegues + Siri)")
         col_in, col_out = st.columns(2)
         suma = 0
         with col_in:
-            if metodo == "Jackson (3 Pliegues)":
-                if d.get('Sexo', 'Masculino') == "Masculino":
-                    p1 = st.number_input("Pectoral (mm)", 0.0); p2 = st.number_input("Abdominal (mm)", 0.0); p3 = st.number_input("Muslo (mm)", 0.0)
-                else:
-                    p1 = st.number_input("Tríceps (mm)", 0.0); p2 = st.number_input("Suprailiaco (mm)", 0.0); p3 = st.number_input("Muslo (mm)", 0.0)
-                suma = p1+p2+p3
-                if suma > 0: grasa = calcular_jackson_3(d.get('Edad', 25), d.get('Sexo', 'Masculino'), suma)
-            else:
-                p1 = st.number_input("Bíceps (mm)", 0.0); p2 = st.number_input("Tríceps (mm)", 0.0); p3 = st.number_input("Subescapular (mm)", 0.0); p4 = st.number_input("Suprailiaco (mm)", 0.0)
-                suma = p1+p2+p3+p4
-                if suma > 0: grasa = calcular_durnin(d.get('Edad', 25), d.get('Sexo', 'Masculino'), suma)
+            st.caption("Ingresa los pliegues (mm): Bíceps, Tríceps, Subescapular, Suprailiaco")
+            p1 = st.number_input("Bíceps (mm)", 0.0)
+            p2 = st.number_input("Tríceps (mm)", 0.0)
+            p3 = st.number_input("Subescapular (mm)", 0.0)
+            p4 = st.number_input("Suprailiaco (mm)", 0.0)
+            suma = p1+p2+p3+p4
+            
+            if suma > 0: 
+                grasa = calcular_durnin(d.get('Edad', 25), d.get('Sexo', 'Masculino'), suma)
+                
         with col_out:
             if suma > 0:
                 st.metric("% Grasa", f"{grasa:.1f}%")
                 st.metric("Masa Magra", f"{(d.get('Peso', 70)*(1-grasa/100)):.1f} kg")
+                
+                # --- AQUÍ APLICAMOS LA MAGIA DEL COLOR Y CATEGORÍA ---
+                categoria, color = evaluar_grasa(d.get('Edad', 25), d.get('Sexo', 'Masculino'), grasa)
+                st.markdown(f"""
+                    <div style="background-color: #2D2D2D; padding: 15px; border-radius: 10px; margin-top: 15px; text-align: center; border: 1px solid {color};">
+                        <span style="color: #F0F0F0; font-size: 14px;">Tu % de grasa está en el rango:</span><br>
+                        <span style="color: {color}; font-size: 24px; font-weight: bold; text-transform: uppercase;">{categoria}</span>
+                    </div>
+                """, unsafe_allow_html=True)
+                # -----------------------------------------------------
 
     with t3:
         col1, col2 = st.columns(2)
