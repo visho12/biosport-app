@@ -53,7 +53,6 @@ def login():
         st.session_state["autenticado"] = False
 
     if not st.session_state["autenticado"]:
-        # Título de login centralizado
         col1, col2, col3 = st.columns([1,2,1])
         with col2:
             st.title("⚡ ACCESO BIO SPORT")
@@ -93,14 +92,62 @@ VIDEOS_BASE = {
     "Jalón al Pecho": "https://www.youtube.com/watch?v=HSoHeSrp-j4",
     "Peso Muerto Rumano": "https://www.youtube.com/watch?v=JCXUYuzwNrM",
     "Plancha Abdominal": "https://www.youtube.com/watch?v=ASdvN_XEl_c",
-    "Press Banca": "https://www.youtube.com/watch?v=VmB1G1K7v94"
+    "Press Banca": "https://www.youtube.com/watch?v=VmB1G1K7v94",
+    "Zancadas": "https://www.youtube.com/watch?v=0_ZmM-J7y_M",
+    "Remo Mancuerna": "https://www.youtube.com/watch?v=D7KaRcCIQms",
+    "Press Militar": "https://www.youtube.com/watch?v=M2rwvNhTOu0"
 }
+
 SUGERENCIAS_OBJETIVO = {
     "Hipertrofia": {"Reps": "6-12", "Pausa": "1:30-2:00", "RPE": "7-9", "RM": "65-80%"},
     "Fuerza Máxima": {"Reps": "1-5", "Pausa": "3:00-5:00", "RPE": "8-10", "RM": "85-100%"},
     "Resistencia": {"Reps": "15-20+", "Pausa": "0:30-1:00", "RPE": "6-8", "RM": "< 60%"},
     "Potencia": {"Reps": "1-5", "Pausa": "2:00-3:00", "RPE": "Explosivo", "RM": "30-70%"}
 }
+
+TABLA_BADILLO = pd.DataFrame({
+    "Zona": ["Fuerza Máx", "Fuerza-Hipertrofia", "Hipertrofia Alta", "Hipertrofia Media", "Resistencia"],
+    "% 1RM": ["85-100%", "80-85%", "70-80%", "60-75%", "<60%"],
+    "Reps": ["1-5", "5-7", "6-12", "12-20", "20+"],
+    "Descanso": ["3-5 min", "3 min", "2 min", "1-2 min", "<1 min"]
+})
+
+GUIAS_BOMPA = pd.DataFrame({
+    "Fase": ["Adaptación", "Hipertrofia", "Fuerza Máx", "Potencia", "Transición"],
+    "Intensidad": ["30-60%", "60-80%", "85-100%", "30-80%", "Baja"],
+    "Reps": ["12-20", "6-12", "1-5", "1-10", "Libre"],
+    "Descanso": ["1-2 min", "1-3 min", "3-5+ min", "3-5+ min", "Libre"]
+})
+
+GUIA_TEMPO = pd.DataFrame({
+    "Objetivo": ["Hipertrofia", "Fuerza Máx", "Potencia", "Resistencia"],
+    "Tempo": ["3-0-1-0", "X-0-X-0", "X-X-X", "2-0-2-0"],
+    "Explicación": ["Bajada lenta", "Máxima velocidad", "Explosivo", "Continuo"]
+})
+
+GUIA_DESCANSOS = pd.DataFrame({
+    "Objetivo": ["Fuerza/Potencia", "Hipertrofia", "Resistencia"],
+    "Tiempo": ["3 a 5+ min", "60 a 90 seg", "30 a 60 seg"],
+    "¿Por qué?": ["Recuperar ATP", "Estrés Metabólico", "Limpiar lactato"]
+})
+
+ESCALA_RPE = pd.DataFrame({
+    "RPE": [10, 9, 8, 7, 6],
+    "RIR": ["0 (Fallo)", "1", "2", "3", "4"],
+    "Sensación": ["Imposible más", "Podría 1 más", "Podría 2 más", "Podría 3 más", "Calentamiento"]
+})
+
+ESCALA_BORG = pd.DataFrame({
+    "Nivel": ["Muy Suave", "Suave", "Moderado", "Duro", "Muy Duro", "Máximo"],
+    "Escala Modificada (0-10)": ["0-2", "3", "4-5", "6-7", "8-9", "10"],
+    "Test del Habla": ["Cantar", "Conversación fluida", "Frases cortas", "Palabras sueltas", "Apenas hablar", "Sin aliento / Agonía"]
+})
+
+GUIA_ZONAS_CARDIO = pd.DataFrame({
+    "Zona": ["Z1 (Regenerativo)", "Z2 (Aeróbico)", "Z3 (Umbral)", "Z4 (VO2Max)", "Z5 (Anaeróbico)"],
+    "% VAM": ["< 60%", "60-75%", "75-90%", "95-105%", "> 110%"],
+    "Sensación": ["Muy fácil", "Fácil", "Duro", "Muy duro", "Agonía"]
+})
 
 # =====================================================
 # 3. ZONA DE FUNCIONES PRINCIPALES
@@ -310,7 +357,7 @@ with st.sidebar.expander("🧮 Calculadora RM Rápida", expanded=False):
         with c1: st.caption(f"90%: {rm*0.9:.1f}"); st.caption(f"80%: {rm*0.8:.1f}")
         with c2: st.caption(f"70%: {rm*0.7:.1f}"); st.caption(f"60%: {rm*0.6:.1f}")
 
-opciones_menu = ["0. 🏠 Inicio", "1. 📋 Ficha & Antropo", "2. 💪 Entrenamiento", "3. 🧠 Plan Semanal", "4. 🏃‍♂️ Cardio", "5. 📈 Progreso", "6. 📚 Guías Completas", "7. 📝 Notas"]
+opciones_menu = ["0. 🏠 Inicio", "1. 📋 Ficha & Antropo", "2. 💪 Entrenamiento", "3. 🧠 Plan Semanal", "4. 🏃‍♂️ Cardio", "5. 📈 Progreso", "6. 📚 Guías Completas", "7. 📝 Notas", "8. 🎥 Videoteca"]
 if st.session_state.get('usuario_actual') == "visho": opciones_menu.append("👑 Panel Admin")
 menu = st.sidebar.radio("Menú Principal:", opciones_menu)
 
@@ -571,12 +618,19 @@ elif menu == "5. 📈 Progreso":
     else: st.info("Sin datos para analizar")
 
 # =====================================================
-# PESTAÑA 6 Y 7: GUÍAS Y NOTAS
+# PESTAÑA 6 Y 7 Y 8: GUÍAS, NOTAS, VIDEOTECA
 # =====================================================
 elif menu == "6. 📚 Guías Completas":
-    t1, t2 = st.tabs(["Fuerza (Badillo)", "Zonas Cardio"])
+    t1, t2, t3, t4, t5 = st.tabs(["Fuerza (Badillo)", "Planif. (Bompa)", "Tempo & Pausa", "RPE & Borg", "Zonas Cardio"])
     with t1: st.table(TABLA_BADILLO)
-    with t2: st.table(GUIA_ZONAS_CARDIO)
+    with t2: st.table(GUIAS_BOMPA)
+    with t3: 
+        col1, col2 = st.columns(2)
+        col1.table(GUIA_TEMPO); col2.table(GUIA_DESCANSOS)
+    with t4: 
+        col1, col2 = st.columns(2)
+        col1.table(ESCALA_RPE); col2.table(ESCALA_BORG)
+    with t5: st.table(GUIA_ZONAS_CARDIO)
 
 elif menu == "7. 📝 Notas":
     st.title("Notas Personales")
@@ -584,6 +638,32 @@ elif menu == "7. 📝 Notas":
     if st.button("Guardar Notas"):
         st.session_state.notas_personales = notas
         guardar_datos_disco(); st.toast("Notas guardadas en la nube", icon="☁️")
+
+elif menu == "8. 🎥 Videoteca":
+    st.title("Videoteca y Ejercicios")
+    df_v = pd.DataFrame(list(st.session_state.biblioteca_videos.items()), columns=["Ejercicio", "Enlace"])
+    st.dataframe(df_v, use_container_width=True)
+    st.divider()
+    col_add, col_del = st.columns(2)
+    with col_add:
+        st.subheader("➕ Agregar Ejercicio")
+        n_ej = st.text_input("Nombre del Nuevo Ejercicio:")
+        n_li = st.text_input("Enlace (YouTube, Drive, etc):")
+        if st.button("Guardar Ejercicio", type="primary"):
+            if n_ej.strip():
+                st.session_state.biblioteca_videos[n_ej.strip()] = n_li.strip()
+                guardar_datos_disco()
+                st.rerun()
+            else: st.warning("Escribe un nombre para el ejercicio.")
+    with col_del:
+        st.subheader("🗑️ Eliminar Ejercicio")
+        lista_ejercicios = list(st.session_state.biblioteca_videos.keys())
+        if lista_ejercicios:
+            ej_a_borrar = st.selectbox("Selecciona el ejercicio a borrar:", lista_ejercicios)
+            if st.button("Eliminar Ejercicio"):
+                del st.session_state.biblioteca_videos[ej_a_borrar]
+                guardar_datos_disco(); st.success(f"'{ej_a_borrar}' eliminado."); time.sleep(1); st.rerun()
+        else: st.info("No hay ejercicios en la videoteca.")
 
 elif menu == "👑 Panel Admin":
     mostrar_panel_admin()
