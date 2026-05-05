@@ -590,15 +590,24 @@ if menu == "1. 📋 Ficha & Antropo":
     
     t1, t2, t3 = st.tabs(["📝 Datos Básicos", "📏 Antropometría", "🏥 Anamnesis"])
     
-    with t1:
+   with t1:
         c1, c2, c3, c4 = st.columns(4)
         np = c1.number_input("Peso (kg)", value=float(d.get('Peso', 70)))
         nt = c2.number_input("Talla (cm)", value=float(d.get('Talla', 170)))
         ne = c3.number_input("Edad", value=int(d.get('Edad', 25)))
         ns = c4.selectbox("Sexo", ["Masculino", "Femenino"], index=0 if d.get('Sexo', 'Masculino')=="Masculino" else 1)
+        
         if st.button("Actualizar Datos Básicos"):
             st.session_state.db_clientes[c].update({"Peso":np,"Talla":nt,"Edad":ne,"Sexo":ns})
             guardar_datos_disco(); st.success("Guardado exitosamente.")
+
+        # --- NUEVO: CÁLCULO DE TANAKA ---
+        st.divider()
+        if st.checkbox("❤️ Calcular Frecuencia Cardíaca Máxima (Fórmula Tanaka)"):
+            fcm = 208 - (0.7 * ne)
+            st.info(f"Frecuencia Cardíaca Máxima sugerida: **{fcm:.0f} lpm** (Latidos por minuto)")
+            st.caption("Basado en la fórmula de Tanaka: 208 - (0.7 × Edad). Ideal para programar zonas de cardio.")
+        # --------------------------------
 
     with t2:
         st.subheader("Cálculo de Grasa (Siri)")
@@ -907,9 +916,29 @@ elif menu == "5. 📈 Progreso":
         if 'Tipo' not in df.columns: df['Tipo'] = 'Fuerza'
         lista_ejercicios = df['Ejercicio'].unique()
         ej_sel = st.selectbox("Selecciona Ejercicio para Gráfico:", lista_ejercicios)
-        datos_graf = df[df['Ejercicio'] == ej_sel]
-        if not datos_graf.empty: st.line_chart(datos_graf, x="Fecha", y="Carga")
+        datos_graf = df[df['Ejercicio'] == ej_sel].copy()
         
+        if not datos_graf.empty: 
+            st.line_chart(datos_graf, x="Fecha", y="Carga")
+            
+            # --- NUEVO: INTELIGENCIA DE ESTANCAMIENTO ---
+            if len(datos_graf) >= 3:
+                st.subheader("🧠 Análisis Automático de Progreso")
+                ultimas_cargas = datos_graf['Carga'].tail(3).tolist()
+                carga_1 = ultimas_cargas[-3] # Hace 2 sesiones
+                carga_2 = ultimas_cargas[-2] # Sesión anterior
+                carga_3 = ultimas_cargas[-1] # Última sesión (Actual)
+                
+                if carga_1 == carga_2 == carga_3:
+                    st.warning(f"⚠️ **Estancamiento Detectado:** El atleta ha mantenido la carga ({carga_3}kg) en las últimas 3 sesiones. Considera cambiar el rango de repeticiones o dar una semana de Descarga.")
+                elif carga_3 < carga_1:
+                    st.error(f"📉 **Baja de Rendimiento:** La carga actual ({carga_3}kg) es menor a la de hace unas sesiones ({carga_1}kg). Revisa fatiga, sueño o molestias.")
+                elif carga_3 > carga_2:
+                    st.success(f"🔥 **¡Excelente Progreso!** La carga sigue subiendo. El atleta asimila bien el estímulo.")
+                else:
+                    st.info("📊 Tendencia de carga estable. Sigue monitoreando.")
+            # --------------------------------------------
+            
         st.divider()
         st.subheader("🗑️ Gestionar Registros")
         for i, r in enumerate(reversed(st.session_state.historial_global)):
