@@ -296,7 +296,6 @@ def calcular_durnin(edad, sexo, s4):
 
 # --- NUEVA FUNCIÓN EVALUADORA DE COMPOSICIÓN CORPORAL (TERMINOLOGÍA CLÍNICA) ---
 def evaluar_grasa(edad, sexo, grasa):
-    # Definición de umbrales según tablas de referencia (adaptadas a rangos de edad)
     if sexo == "Masculino":
         if edad <= 24: thresholds = [3, 9, 19, 23]
         elif edad <= 29: thresholds = [3, 10, 20, 24]
@@ -318,17 +317,16 @@ def evaluar_grasa(edad, sexo, grasa):
         elif edad <= 59: thresholds = [8, 26, 34, 38]
         else: thresholds = [8, 27, 35, 39]
 
-    # Evaluación y asignación de color basada en terminología de composición corporal
     if grasa <= thresholds[0]: 
-        return "Grasa Esencial", "#FF4B4B"        # Nivel mínimo de supervivencia
+        return "Grasa Esencial", "#FF4B4B"        
     elif grasa <= thresholds[1]: 
-        return "Compartimento Graso Disminuido", "#00C853" # Nivel atlético/bajo
+        return "Compartimento Graso Disminuido", "#00C853" 
     elif grasa <= thresholds[2]: 
-        return "Compartimento Graso Adecuado", "#00BFFF"   # Rango saludable general
+        return "Compartimento Graso Adecuado", "#00BFFF"   
     elif grasa <= thresholds[3]: 
-        return "Compartimento Graso Aumentado", "#FFD700"  # Exceso leve
+        return "Compartimento Graso Aumentado", "#FFD700"  
     else: 
-        return "Grasa Muy Aumentada", "#DC143C"            # Exceso significativo
+        return "Grasa Muy Aumentada", "#DC143C"            
 # -------------------------------------------------------------------------------
 
 def interpretar_tiempo(t):
@@ -413,7 +411,6 @@ if menu == "0. 🏠 Inicio":
     st.title("⚡ Dashboard Bio Sport")
     st.markdown("Visión general de tus atletas y rendimiento diario.")
     
-    # Cálculo de métricas
     total_atletas = len(st.session_state.db_clientes)
     hoy_str = date.today().strftime("%d/%m/%Y")
     entrenos_hoy = len([h for h in st.session_state.historial_global if h['Fecha'] == hoy_str])
@@ -436,6 +433,7 @@ elif menu == "1. 📋 Ficha & Antropo":
     d = st.session_state.db_clientes[c]
     
     t1, t2, t3 = st.tabs(["📝 Datos Básicos", "📏 Antropometría", "🏥 Anamnesis"])
+    
     with t1:
         c1, c2, c3, c4 = st.columns(4)
         np = c1.number_input("Peso (kg)", value=float(d.get('Peso', 70)))
@@ -473,7 +471,6 @@ elif menu == "1. 📋 Ficha & Antropo":
                 st.metric("% Grasa", f"{grasa:.1f}%")
                 st.metric("Masa Magra", f"{(d.get('Peso', 70)*(1-grasa/100)):.1f} kg")
                 
-                # --- AQUÍ APLICAMOS LA MAGIA DEL COLOR Y CATEGORÍA ---
                 categoria, color = evaluar_grasa(d.get('Edad', 25), d.get('Sexo', 'Masculino'), grasa)
                 st.markdown(f"""
                     <div style="background-color: #2D2D2D; padding: 15px; border-radius: 10px; margin-top: 15px; text-align: center; border: 1px solid {color};">
@@ -481,9 +478,8 @@ elif menu == "1. 📋 Ficha & Antropo":
                         <span style="color: {color}; font-size: 24px; font-weight: bold; text-transform: uppercase;">{categoria}</span>
                     </div>
                 """, unsafe_allow_html=True)
-                # -----------------------------------------------------
 
-   with t3:
+    with t3:
         st.subheader("Historial Clínico y Deportivo")
         col1, col2 = st.columns(2)
         fono = col1.text_input("📱 Teléfono / WhatsApp", value=d.get("Telefono", ""))
