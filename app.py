@@ -257,6 +257,125 @@ def mostrar_panel_admin():
             else: st.warning("No hay datos registrados aún.")
         except Exception as e: st.error(f"Error cargando el panel: {e}")
 
+def generar_pdf_plan(cliente, plan_focos, plan_detalles):
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    
+    COLOR_PRIMARIO = HexColor("#39FF14") # Verde Neón
+    COLOR_SECUNDARIO = HexColor("#2D2D2D") # Gris oscuro
+    COLOR_TEXTO = HexColor("#F0F0F0") # Blanco
+    
+    c.setFillColor(HexColor("#1E1E1E"))
+    c.rect(0, height - 100, width, 100, fill=1, stroke=0)
+    
+    c.setFillColor(COLOR_PRIMARIO)
+    c.setFont("Helvetica-Bold", 24)
+    c.drawString(50, height - 50, "PLAN DE ENTRENAMIENTO")
+    
+    c.setFont("Helvetica", 14)
+    c.drawString(50, height - 80, f"Atleta: {cliente}")
+    c.drawRightString(width - 50, height - 50, "PRO TRAINER BIO SPORT")
+    c.setFont("Helvetica", 10)
+    c.drawRightString(width - 50, height - 70, f"Fecha: {date.today().strftime('%d/%m/%Y')}")
+    
+    y = height - 130
+    dias_orden = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+    
+    c.setFillColor(COLOR_TEXTO)
+    
+    tipo_sem = plan_focos.get("tipo_semana", "")
+    if tipo_sem:
+        c.setFont("Helvetica-Bold", 12)
+        c.setFillColor(COLOR_PRIMARIO)
+        c.drawString(50, y, f"Fase: {tipo_sem}")
+        y -= 30
+
+    for dia in dias_orden:
+        foco = plan_focos.get(dia, "Descanso")
+        detalle = plan_detalles.get(dia, "")
+        
+        lineas = len(detalle.split('\n')) if detalle else 0
+        altura_necesaria = 60 + (lineas * 14) 
+        
+        if y - altura_necesaria < 50:
+            c.showPage()
+            y = height - 50
+        
+        if foco != "Descanso":
+            c.setFillColor(COLOR_SECUNDARIO)
+            c.roundRect(50, y - 20, width - 100, 20, 4, fill=1, stroke=0)
+            
+            c.setFillColor(COLOR_PRIMARIO)
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(60, y - 15, f"{dia.upper()}  |  {foco}")
+            
+            c.setStrokeColor(COLOR_PRIMARIO)
+            c.setLineWidth(1)
+            c.line(50, y - 20, width - 50, y - 20)
+            
+            y -= 35
+            
+            if detalle:
+                partes = detalle.split("||")
+                
+                if len(partes) == 3: 
+                    titulos_bloques = ["Calentamiento", "Desarrollo", "Vuelta a la Calma"]
+                    for i, bloque in enumerate(partes):
+                        if bloque.strip():
+                            if y < 60:
+                                c.showPage()
+                                y = height - 50
+                                
+                            c.setFont("Helvetica-Bold", 10)
+                            c.setFillColor(COLOR_PRIMARIO)
+                            c.drawString(70, y, f"[{titulos_bloques[i]}]")
+                            y -= 14
+                            
+                            c.setFont("Helvetica", 11)
+                            c.setFillColor(colors.black) # Texto en negro para que se lea bien en el PDF blanco
+                            for linea in bloque.split('\n'):
+                                if linea.strip():
+                                    if y < 50:
+                                        c.showPage()
+                                        y = height - 50
+                                    c.drawString(80, y, f"• {linea.strip()}")
+                                    y -= 14
+                            y -= 5 
+                            
+                else:
+                    c.setFont("Helvetica", 11)
+                    c.setFillColor(colors.black)
+                    for linea in detalle.split('\n'):
+                        if linea.strip():
+                            if y < 50:
+                                c.showPage()
+                                y = height - 50
+                            c.drawString(70, y, f"• {linea.strip()}")
+                            y -= 14
+            else:
+                c.setFont("Helvetica-Oblique", 10)
+                c.setFillColor(colors.gray)
+                c.drawString(70, y, "(Sin detalles registrados)")
+                y -= 14
+            
+            y -= 15 
+            
+        else:
+            c.setFillColor(colors.lightgrey)
+            c.setFont("Helvetica-Oblique", 10)
+            c.drawString(60, y - 10, f"{dia}: Descanso / Recuperación Activa")
+            y -= 30
+
+    c.setFont("Helvetica", 9)
+    c.setFillColor(colors.grey)
+    c.drawCentredString(width / 2, 30, "La constancia es la clave del éxito. ¡Vamos por más!")
+    c.drawString(width - 50, 30, str(c.getPageNumber()))
+    
+    c.save()
+    buffer.seek(0)
+    return buffer
+
 def obtener_ultimo_registro(cliente, ejercicio):
     for registro in reversed(st.session_state.historial_global):
         if registro['Cliente'] == cliente and registro['Ejercicio'] == ejercicio and registro.get('Tipo') == 'Fuerza': return registro
