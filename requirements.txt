@@ -1,6 +1,6 @@
 streamlit
 pandas
-reportlab
 gspread
 google-auth
 google-generativeai
+reportlab
