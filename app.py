@@ -632,7 +632,7 @@ elif menu == "3. 🧠 Plan Semanal":
                 nuevo_detalles[dia] = f"{calentamiento}||{desarrollo}||{vuelta}"
             else: nuevo_detalles[dia] = ""
 
-        c1, c2 = st.columns(2)
+    c1, c2 = st.columns(2)
     with c1:
         if st.button("💾 Guardar Plan", type="primary"):
             st.session_state.planes_semanales[c], st.session_state.detalles_planes[c] = nuevo_focos, nuevo_detalles
@@ -641,8 +641,8 @@ elif menu == "3. 🧠 Plan Semanal":
         try:
             pdf_bytes = generar_pdf_plan(c, nuevo_focos, nuevo_detalles)
             st.download_button(label="📄 Descargar PDF Premium", data=pdf_bytes, file_name=f"Rutina_{c.replace(' ', '_')}.pdf", mime="application/pdf")
-        except:
-            st.warning("⚠️ Instala 'reportlab' para generar PDF.")
+        except Exception as e:
+            st.error(f"⚠️ El error real del PDF es: {e}")
 
 
 # =====================================================
