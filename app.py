@@ -968,18 +968,19 @@ elif menu == "🧠 Plan Semanal":
                f"Lesiones:{df_.get('Lesiones','Ninguna')}")
         cd_, cb_ = st.columns([2,1])
         enfoque  = cd_.selectbox("Enfoque:", ["Pierna","Torso","Full Body","Cardio","Glúteo","Brazo"])
-        if cb_.button("✨ Generar") and modelo_dante:
-            with st.spinner("Dante diseñando..."):
-                try:
-                    r = modelo_dante.generate_content(
-                        f"Eres Dante, entrenador. Perfil:{pf}. Microciclo:{mc}.\n"
-                        f"Rutina para {enfoque}:\n1.Calentamiento\n"
-                        f"2.Bloque principal (series,reps,descanso)\n3.Vuelta calma.\nSé específico.")
-                    st.markdown(r.text)
-                except Exception as e:
-                    st.error(f"Error Dante: {e}")
-        elif cb_.button("✨ Generar") and not modelo_dante:
-            st.warning("Dante no disponible — verifica la API key.")
+        if cb_.button("✨ Generar", key="btn_dante_plan"):
+            if modelo_dante:
+                with st.spinner("Dante diseñando..."):
+                    try:
+                        r = modelo_dante.generate_content(
+                            f"Eres Dante, entrenador. Perfil:{pf}. Microciclo:{mc}.\n"
+                            f"Rutina para {enfoque}:\n1.Calentamiento\n"
+                            f"2.Bloque principal (series,reps,descanso)\n3.Vuelta calma.\nSé específico.")
+                        st.markdown(r.text)
+                    except Exception as e:
+                        st.error(f"Error Dante: {e}")
+            else:
+                st.warning("Dante no disponible — verifica la API key.")
 
     nf = {"tipo_semana": mc}; nd = {}
     ops_dia = GRUPOS.copy()
@@ -1177,7 +1178,7 @@ elif menu == "🧪 Tests Físicos":
                          use_container_width=True,hide_index=True)
             with st.expander("🗑️ Eliminar registro"):
                 idx_d = st.number_input("Número (0=primero):",0,len(tc)-1,0)
-                if st.button("Eliminar"):
+                if st.button("Eliminar", key="btn_del_test"):
                     st.session_state.tests_fisicos[c].pop(idx_d)
                     guardar_datos(); st.rerun()
         else:
@@ -1380,7 +1381,7 @@ elif menu == "🎥 Videoteca":
         lista_ = list(st.session_state.biblioteca_videos.keys())
         if lista_:
             eb_ = st.selectbox("Selecciona:", lista_)
-            if st.button("Eliminar"):
+            if st.button("Eliminar", key="btn_del_video"):
                 del st.session_state.biblioteca_videos[eb_]
                 guardar_datos(); time.sleep(0.5); st.rerun()
         else:
