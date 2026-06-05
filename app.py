@@ -610,14 +610,33 @@ else:
                            file_name="backup_biosport.json", mime="application/json")
 
 with st.sidebar.expander("🧮 Calculadora RM", expanded=False):
-    _p = st.number_input("Peso kg",  0.0, step=0.5, key="rm_p")
-    _r = st.number_input("Reps",     1, 20,  8,     key="rm_r")
+    _p = st.number_input("Peso (kg)", 0.0, step=0.5, key="rm_p")
+    _r = st.number_input("Reps",      1, 20, 8,      key="rm_r")
     if _p > 0:
         _rm = calc_1rm(_p, _r)
-        st.write(f"**1RM: {_rm:.1f} kg**")
-        ca, cb = st.columns(2)
-        ca.caption(f"90%: {_rm*.9:.1f}\n80%: {_rm*.8:.1f}")
-        cb.caption(f"70%: {_rm*.7:.1f}\n60%: {_rm*.6:.1f}")
+        st.markdown(
+            f"<div style='background:#1a1a1a;border:1px solid #39FF14;"
+            f"border-radius:8px;padding:10px;text-align:center;margin:6px 0'>"
+            f"<div style='color:#888;font-size:.75rem;letter-spacing:1px'>1RM ESTIMADO</div>"
+            f"<div style='color:#39FF14;font-size:1.6rem;font-weight:700;"
+            f"font-family:Bebas Neue,sans-serif'>{_rm:.1f} kg</div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+        filas = ""
+        for pct in [95, 90, 85, 80, 75, 70, 65, 60, 55, 50]:
+            val   = _rm * pct / 100
+            color = "#39FF14" if pct >= 85 else "#FFD700" if pct >= 70 else "#00BFFF"
+            filas += (
+                f"<div style='display:flex;justify-content:space-between;"
+                f"padding:4px 8px;border-radius:4px;margin:2px 0;background:#1a1a1a'>"
+                f"<span style='color:#888;font-size:.8rem'>{pct}%</span>"
+                f"<span style='color:{color};font-weight:700;font-size:.9rem'>{val:.1f} kg</span>"
+                f"</div>"
+            )
+        st.markdown(filas, unsafe_allow_html=True)
+    else:
+        st.caption("Ingresa peso y reps para calcular.")
 
 MENU_ITEMS = [
     "🏠 Dashboard",
