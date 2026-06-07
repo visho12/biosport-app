@@ -22,6 +22,7 @@ try:
     from reportlab.pdfgen import canvas as rl_canvas
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.colors import HexColor
+    from reportlab.lib import colors
     REPORTLAB_OK = True
 except ImportError:
     REPORTLAB_OK = False
@@ -846,12 +847,11 @@ elif menu == "💪 Entrenamiento":
         if st.button("➕ Registrar Serie", type="primary", key="btn_registrar_serie"):
             if nom.strip():
                 st.session_state.historial_global.append({
-                    "Cliente":nom.strip() and c,
-                    "Cliente": c,
-                    "Fecha":   fstr(fecha),
+                    "Cliente":   c,
+                    "Fecha":     fstr(fecha),
                     "Ejercicio": nom.strip(),
-                    "Series":  se, "Reps": re, "Carga": kg,
-                    "RPE":     rpe, "Tipo":"Fuerza", "Objetivo":obj_,
+                    "Series":    se, "Reps": re, "Carga": kg,
+                    "RPE":       rpe, "Tipo":"Fuerza", "Objetivo":obj_,
                 })
                 guardar_datos(); st.toast("Serie registrada 💪"); st.rerun()
             else:
