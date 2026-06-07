@@ -961,86 +961,321 @@ elif menu == "🏋️ Modo En Vivo":
                     unsafe_allow_html=True)
 
 # =====================================================
-# 🧠 PLAN SEMANAL
+# 🧠 PLAN SEMANAL — Rediseño intuitivo
 # =====================================================
 elif menu == "🧠 Plan Semanal":
     c = need_athlete()
-    h1, h2 = st.columns([3,1])
-    h1.subheader(f"Plan Semanal — {c}")
-    with h2:
-        if st.button("🔄 Cargar Historial", key="btn_cargar_historial"):
-            importar_historial(c); st.toast("Historial importado ✅"); st.rerun()
 
-    tg  = st.session_state.planes_semanales.get(c,{}).get("tipo_semana",TIPOS_MICROCICLO[1])
-    mc  = st.select_slider("📊 Microciclo:", TIPOS_MICROCICLO,
-                           value=tg if tg in TIPOS_MICROCICLO else TIPOS_MICROCICLO[1])
-    {"Ajuste (Descarga)":   st.info,
-     "Carga (Desarrollo)":  st.success,
-     "Impacto (Choque)":    st.error}[mc](
-        {"Ajuste (Descarga)":  "📉 Recuperación y técnica. RPE 5-7.",
-         "Carga (Desarrollo)": "📈 Desarrollo progresivo. RPE 7-8.5.",
-         "Impacto (Choque)":   "🔥 Máximo esfuerzo. RPE 9-10."}[mc])
+    # CSS extra para tarjetas de días
+    st.markdown("""
+    <style>
+    .dia-card {
+        background: linear-gradient(135deg,#1a1a1a,#222);
+        border: 1px solid #333;
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        transition: border-color .2s;
+    }
+    .dia-card:hover { border-color: #555; }
+    .dia-header {
+        display: flex; justify-content: space-between;
+        align-items: center; margin-bottom: 6px;
+    }
+    .dia-nombre {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: 1.2rem; letter-spacing: 2px; color: #fff;
+    }
+    .dia-badge {
+        font-size: .75rem; font-weight: 700;
+        padding: 3px 10px; border-radius: 20px;
+        text-transform: uppercase; letter-spacing: 1px;
+    }
+    .badge-descanso { background:#1a1a1a; color:#555; border:1px solid #333; }
+    .badge-pierna   { background:#1a0d2e; color:#9b59b6; border:1px solid #9b59b6; }
+    .badge-pecho    { background:#0d1f2e; color:#3498db; border:1px solid #3498db; }
+    .badge-espalda  { background:#0d2e1a; color:#2ecc71; border:1px solid #2ecc71; }
+    .badge-gluteo   { background:#2e1a0d; color:#e67e22; border:1px solid #e67e22; }
+    .badge-full     { background:#2e0d0d; color:#e74c3c; border:1px solid #e74c3c; }
+    .badge-torso    { background:#0d2e2e; color:#1abc9c; border:1px solid #1abc9c; }
+    .badge-brazo    { background:#2e2e0d; color:#f1c40f; border:1px solid #f1c40f; }
+    .badge-cardio   { background:#0d1a2e; color:#00BFFF; border:1px solid #00BFFF; }
+    .ejercicio-chip {
+        display:inline-block; background:#2d2d2d; border:1px solid #444;
+        border-radius:6px; padding:4px 10px; margin:3px 4px 3px 0;
+        font-size:.82rem; color:#ddd;
+    }
+    .ejercicio-chip:hover { border-color:#39FF14; color:#39FF14; cursor:default; }
+    </style>
+    """, unsafe_allow_html=True)
 
-    with st.expander("🤖 Dante (IA) — Sugerir Rutina"):
-        df_ = st.session_state.db_clientes.get(c,{})
-        pf  = (f"Edad:{df_.get('Edad','?')}, Exp:{df_.get('Experiencia','?')}, "
-               f"Lesiones:{df_.get('Lesiones','Ninguna')}")
-        cd_, cb_ = st.columns([2,1])
-        enfoque  = cd_.selectbox("Enfoque:", ["Pierna","Torso","Full Body","Cardio","Glúteo","Brazo"])
-        if cb_.button("✨ Generar", key="btn_dante_plan"):
-            if modelo_dante:
-                with st.spinner("Dante diseñando..."):
-                    try:
-                        r = modelo_dante.generate_content(
-                            f"Eres Dante, entrenador. Perfil:{pf}. Microciclo:{mc}.\n"
-                            f"Rutina para {enfoque}:\n1.Calentamiento\n"
-                            f"2.Bloque principal (series,reps,descanso)\n3.Vuelta calma.\nSé específico.")
-                        st.markdown(r.text)
-                    except Exception as e:
-                        st.error(f"Error Dante: {e}")
-            else:
-                st.warning("Dante no disponible — verifica la API key.")
+    # ── CABECERA ──────────────────────────────────────────────
+    st.title(f"🧠 Plan Semanal — {c}")
 
-    nf = {"tipo_semana": mc}; nd = {}
+    # ── PASO 1: TIPO DE SEMANA ────────────────────────────────
+    st.markdown("### 1️⃣ ¿Qué tipo de semana es?")
+    tg = st.session_state.planes_semanales.get(c,{}).get("tipo_semana", TIPOS_MICROCICLO[1])
+    mc_cols = st.columns(3)
+    mc_info = {
+        "Ajuste (Descarga)":  ("📉","Descarga","#00BFFF","RPE 5-7 · Técnica y recuperación"),
+        "Carga (Desarrollo)": ("📈","Desarrollo","#39FF14","RPE 7-8.5 · Cargas progresivas"),
+        "Impacto (Choque)":   ("🔥","Choque","#FF4B4B","RPE 9-10 · Máximo esfuerzo"),
+    }
+    mc = tg if tg in TIPOS_MICROCICLO else TIPOS_MICROCICLO[1]
+    for i, (tipo, (ico, label, color, desc)) in enumerate(mc_info.items()):
+        with mc_cols[i]:
+            selected = mc == tipo
+            border   = color if selected else "#333"
+            bg       = f"{color}15" if selected else "#1a1a1a"
+            check    = "✓ " if selected else ""
+            if st.button(
+                f"{ico} {check}{label}\n{desc}",
+                key=f"mc_btn_{i}",
+                use_container_width=True,
+                type="primary" if selected else "secondary",
+            ):
+                mc = tipo
+            st.markdown(
+                f"<div style='text-align:center;font-size:.75rem;color:{color if selected else '#666'};"
+                f"margin-top:-8px'>{desc}</div>",
+                unsafe_allow_html=True
+            )
+
+    st.divider()
+
+    # ── PASO 2: VISTA SEMANAL ─────────────────────────────────
+    st.markdown("### 2️⃣ Diseña tu semana")
+    st.caption("Haz clic en un día para editarlo 👇")
+
+    # Mapa de colores por grupo
+    BADGE_CLASS = {
+        "Descanso":"badge-descanso","Pierna":"badge-pierna",
+        "Pecho/Hombro":"badge-pecho","Espalda":"badge-espalda",
+        "Glúteo":"badge-gluteo","Full Body":"badge-full",
+        "Torso":"badge-torso","Brazo":"badge-brazo","Cardio":"badge-cardio",
+    }
+    ICONOS_GRUPO = {
+        "Descanso":"😴","Pierna":"🦵","Pecho/Hombro":"💪",
+        "Espalda":"🏋️","Glúteo":"🍑","Full Body":"⚡",
+        "Torso":"🔝","Brazo":"💪","Cardio":"🏃",
+    }
+
+    # Resumen visual de la semana (7 chips en fila)
+    cols_sem = st.columns(7)
+    for i, dia in enumerate(DIAS):
+        foco_actual = st.session_state.planes_semanales.get(c,{}).get(dia,"Descanso")
+        cls  = BADGE_CLASS.get(foco_actual, "badge-descanso")
+        ico_ = ICONOS_GRUPO.get(foco_actual, "📅")
+        with cols_sem[i]:
+            st.markdown(f"""
+            <div style='text-align:center;padding:8px 4px;background:#1a1a1a;
+                        border-radius:8px;border:1px solid #333'>
+                <div style='font-size:1.3rem'>{ico_}</div>
+                <div style='font-size:.7rem;font-weight:700;color:#aaa;
+                            letter-spacing:1px'>{dia[:3].upper()}</div>
+                <div style='font-size:.65rem;color:#666;margin-top:2px'>
+                    {foco_actual if foco_actual!="Descanso" else "Descanso"}
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── EDITOR DE DÍAS ─────────────────────────────────────────
+    # Estado: qué día está expandido
+    if "dia_editando" not in st.session_state:
+        st.session_state.dia_editando = None
+
+    nf = {"tipo_semana": mc}
+    nd = {}
     ops_dia = GRUPOS.copy()
-    for dia in DIAS:
-        with st.expander(f"📅 {dia}", expanded=False):
-            vd = st.session_state.planes_semanales.get(c,{}).get(dia,"Descanso")
-            if vd not in ops_dia: ops_dia.append(vd)
-            nf[dia] = st.selectbox(f"Enfoque {dia}", ops_dia,
-                                   index=ops_dia.index(vd), key=f"foco_{dia}")
-            if nf[dia] != "Descanso":
-                prev = st.session_state.detalles_planes.get(c,{}).get(dia,"||").split("||")
-                d0 = prev[0] if len(prev)>0 else ""
-                d1 = prev[1] if len(prev)>1 else ""
-                d2 = prev[2] if len(prev)>2 else ""
-                c1,c2,c3 = st.columns(3)
-                cal = c1.text_area("1️⃣ Calentamiento",    value=d0, key=f"c_{dia}", height=150)
-                des = c2.text_area("2️⃣ Desarrollo",       value=d1, key=f"d_{dia}", height=150)
-                vue = c3.text_area("3️⃣ Vuelta a la Calma",value=d2, key=f"v_{dia}", height=150)
-                nd[dia] = f"{cal}||{des}||{vue}"
-            else:
-                nd[dia] = ""
 
-    cg, cp = st.columns(2)
-    with cg:
-        if st.button("💾 Guardar Plan", type="primary", key="btn_guardar_plan"):
+    for dia in DIAS:
+        vd_actual  = st.session_state.planes_semanales.get(c,{}).get(dia,"Descanso")
+        det_actual = st.session_state.detalles_planes.get(c,{}).get(dia,"")
+        if vd_actual not in ops_dia: ops_dia.append(vd_actual)
+
+        cls   = BADGE_CLASS.get(vd_actual,"badge-descanso")
+        ico_d = ICONOS_GRUPO.get(vd_actual,"📅")
+        # Contar ejercicios existentes
+        n_ejs = len([l for l in det_actual.replace("||","\n").split("\n") if l.strip()]) if det_actual else 0
+        ej_hint = f"{n_ejs} ejercicio{'s' if n_ejs!=1 else ''}" if n_ejs>0 else "Sin detalles"
+
+        # Tarjeta del día con botón para editar
+        col_card, col_edit = st.columns([5,1])
+        with col_card:
+            st.markdown(f"""
+            <div class='dia-card'>
+              <div class='dia-header'>
+                <span class='dia-nombre'>{ico_d} {dia}</span>
+                <span class='dia-badge {cls}'>{vd_actual}</span>
+              </div>
+              <div style='color:#666;font-size:.82rem'>{ej_hint}</div>
+            </div>""", unsafe_allow_html=True)
+        with col_edit:
+            st.markdown("<div style='margin-top:12px'>", unsafe_allow_html=True)
+            lbl = "✏️ Editar" if st.session_state.dia_editando != dia else "✅ Listo"
+            if st.button(lbl, key=f"edit_btn_{dia}", use_container_width=True):
+                st.session_state.dia_editando = None if st.session_state.dia_editando==dia else dia
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # Panel de edición inline (solo si este día está seleccionado)
+        if st.session_state.dia_editando == dia:
+            with st.container():
+                st.markdown(f"""
+                <div style='background:#111;border:1px solid #39FF14;border-radius:10px;
+                            padding:18px;margin:-8px 0 12px 0'>
+                    <div style='color:#39FF14;font-family:Bebas Neue,sans-serif;
+                                font-size:1.1rem;letter-spacing:2px;margin-bottom:12px'>
+                        ✏️ EDITANDO {dia.upper()}
+                    </div>
+                </div>""", unsafe_allow_html=True)
+
+                # Selector de grupo muscular como botones visuales
+                st.markdown("**¿Qué se trabaja este día?**")
+                gcols = st.columns(5)
+                grupos_lista = ["Descanso","Pierna","Pecho/Hombro","Espalda","Glúteo",
+                                "Full Body","Torso","Brazo","Cardio"]
+                nuevo_grupo = vd_actual
+                for gi, grp in enumerate(grupos_lista):
+                    with gcols[gi % 5]:
+                        sel_g = grp == vd_actual
+                        if st.button(
+                            f"{ICONOS_GRUPO.get(grp,'📅')} {grp}",
+                            key=f"grp_{dia}_{gi}",
+                            use_container_width=True,
+                            type="primary" if sel_g else "secondary"
+                        ):
+                            nuevo_grupo = grp
+                nf[dia] = nuevo_grupo
+
+                if nuevo_grupo != "Descanso":
+                    st.markdown("<br>**Ejercicios del día**", unsafe_allow_html=True)
+
+                    # Parsear detalles existentes
+                    prev = det_actual.split("||") if "||" in det_actual else ["", det_actual, ""]
+                    d0 = prev[0] if len(prev)>0 else ""
+                    d1 = prev[1] if len(prev)>1 else ""
+                    d2 = prev[2] if len(prev)>2 else ""
+
+                    # Entrada simplificada: UN campo por bloque con placeholder guía
+                    ec1, ec2, ec3 = st.columns(3)
+                    with ec1:
+                        st.markdown("🔥 **Calentamiento**")
+                        st.caption("5-10 min antes de comenzar")
+                        cal = st.text_area(
+                            "cal", value=d0, height=160,
+                            placeholder="Ej:\nTroteo 5 min\nMovilidad cadera\nActivación glúteo",
+                            label_visibility="collapsed", key=f"cal_{dia}"
+                        )
+                    with ec2:
+                        st.markdown("💪 **Bloque Principal**")
+                        st.caption("Un ejercicio por línea")
+                        des = st.text_area(
+                            "des", value=d1, height=160,
+                            placeholder="Ej:\nSentadilla: 4x8 @80kg\nPrensa: 3x12 @100kg\nExtensión: 3x15",
+                            label_visibility="collapsed", key=f"des_{dia}"
+                        )
+                    with ec3:
+                        st.markdown("🧘 **Vuelta a la Calma**")
+                        st.caption("Estiramientos y movilidad")
+                        vue = st.text_area(
+                            "vue", value=d2, height=160,
+                            placeholder="Ej:\nEstiramiento cuádriceps\nFoam roller pierna\nRespiración 2 min",
+                            label_visibility="collapsed", key=f"vue_{dia}"
+                        )
+                    nd[dia] = f"{cal}||{des}||{vue}"
+
+                    # Botón Dante para ESTE día
+                    df_c = st.session_state.db_clientes.get(c,{})
+                    pf_d = (f"Edad:{df_c.get('Edad','?')}, Exp:{df_c.get('Experiencia','?')}, "
+                            f"Lesiones:{df_c.get('Lesiones','Ninguna')}")
+                    if st.button(f"🤖 Dante: generar rutina de {nuevo_grupo}",
+                                 key=f"dante_{dia}", use_container_width=True):
+                        if modelo_dante:
+                            with st.spinner("Dante diseñando..."):
+                                try:
+                                    r = modelo_dante.generate_content(
+                                        f"Eres Dante, entrenador experto. Perfil:{pf_d}. "
+                                        f"Microciclo:{mc}. Genera una rutina de {nuevo_grupo} para {dia}.\n"
+                                        f"Formato EXACTO (3 secciones separadas por '---'):\n"
+                                        f"CALENTAMIENTO:\n[lista de ejercicios]\n---\n"
+                                        f"DESARROLLO:\n[ejercicios con series x reps @ peso]\n---\n"
+                                        f"VUELTA A LA CALMA:\n[estiramientos]"
+                                    )
+                                    txt_dante = r.text
+                                    # Parsear respuesta de Dante automáticamente
+                                    partes_d = txt_dante.split("---")
+                                    if len(partes_d) >= 3:
+                                        st.success("✅ Dante generó la rutina — cópiala arriba o guarda directo:")
+                                        st.session_state[f"dante_cal_{dia}"] = partes_d[0].replace("CALENTAMIENTO:","").strip()
+                                        st.session_state[f"dante_des_{dia}"] = partes_d[1].replace("DESARROLLO:","").strip()
+                                        st.session_state[f"dante_vue_{dia}"] = partes_d[2].replace("VUELTA A LA CALMA:","").strip()
+                                    else:
+                                        st.markdown(txt_dante)
+                                except Exception as e:
+                                    st.error(f"Error Dante: {e}")
+                        else:
+                            st.warning("Dante no disponible.")
+
+                    # Si Dante generó algo, ofrecer aplicarlo
+                    if st.session_state.get(f"dante_cal_{dia}"):
+                        with st.expander("👁️ Ver propuesta de Dante", expanded=True):
+                            dc1,dc2,dc3 = st.columns(3)
+                            dc1.markdown(f"**Calentamiento:**\n{st.session_state[f'dante_cal_{dia}']}")
+                            dc2.markdown(f"**Desarrollo:**\n{st.session_state[f'dante_des_{dia}']}")
+                            dc3.markdown(f"**Vuelta:**\n{st.session_state[f'dante_vue_{dia}']}")
+                            if st.button("✅ Aplicar propuesta de Dante", key=f"apply_dante_{dia}",
+                                         use_container_width=True, type="primary"):
+                                nd[dia] = (f"{st.session_state[f'dante_cal_{dia}']}"
+                                           f"||{st.session_state[f'dante_des_{dia}']}"
+                                           f"||{st.session_state[f'dante_vue_{dia}']}")
+                                nf[dia] = nuevo_grupo
+                                st.session_state.planes_semanales[c] = nf
+                                st.session_state.detalles_planes[c]  = nd
+                                # Limpiar estado Dante
+                                for k_ in [f"dante_cal_{dia}",f"dante_des_{dia}",f"dante_vue_{dia}"]:
+                                    st.session_state.pop(k_, None)
+                                guardar_datos(); st.toast(f"Rutina de Dante aplicada a {dia} ✅"); st.rerun()
+                else:
+                    nf[dia] = "Descanso"
+                    nd[dia] = ""
+                    st.info("😴 Día de descanso — el atleta no entrena.")
+        else:
+            # Día no editado: conservar valores actuales
+            nf[dia] = vd_actual
+            nd[dia] = det_actual
+
+    st.divider()
+
+    # ── ACCIONES FINALES ───────────────────────────────────────
+    st.markdown("### 3️⃣ Guardar y exportar")
+    ca_f, cb_f, cc_f = st.columns(3)
+    with ca_f:
+        if st.button("💾 Guardar Plan Completo", type="primary",
+                     key="btn_guardar_plan", use_container_width=True):
             st.session_state.planes_semanales[c] = nf
             st.session_state.detalles_planes[c]  = nd
+            st.session_state.dia_editando        = None
             ok = guardar_datos()
-            st.toast("Plan guardado ✅" if ok else "Error al guardar ❌")
-    with cp:
+            if ok: st.toast("Plan guardado ✅"); st.rerun()
+            else:  st.error("Error al guardar")
+    with cb_f:
+        if st.button("🔄 Importar del Historial",
+                     key="btn_cargar_historial", use_container_width=True):
+            importar_historial(c); st.toast("Historial importado ✅"); st.rerun()
+    with cc_f:
         if REPORTLAB_OK:
             try:
                 pb = pdf_plan(c, nf, nd)
                 if pb:
                     st.download_button("📄 Descargar PDF", data=pb,
-                                       file_name=f"Rutina_{c.replace(' ','_')}.pdf",
-                                       mime="application/pdf")
+                        file_name=f"Rutina_{c.replace(' ','_')}.pdf",
+                        mime="application/pdf", use_container_width=True)
             except Exception as e:
                 st.error(f"Error PDF: {e}")
         else:
-            st.caption("Instala reportlab para PDF.")
+            st.caption("pip install reportlab para PDF")
 
 # =====================================================
 # 📆 MESOCICLO IA
