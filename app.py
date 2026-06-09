@@ -76,34 +76,33 @@ def _get_hoja_usuarios(sheet):
                        "tipo_cobro","valor_cobro","fecha_registro"])
         return ws
 
+@st.cache_data(ttl=600) # Memoria caché (10 min) para no colapsar el login
 def cargar_usuarios_sistema():
-    try:
-        client = _gs_client()
-        sheet  = client.open_by_url(URL_SHEET)
-        ws     = _get_hoja_usuarios(sheet)
-        rows   = ws.get_all_records()
-        return {r["usuario"]: r for r in rows if r.get("usuario")}
-    except Exception:
-        return {}
+    client = _gs_client()
+    sheet  = client.open_by_url(URL_SHEET)
+    ws     = _get_hoja_usuarios(sheet)
+    rows   = ws.get_all_records()
+    return {str(r["usuario"]).lower().strip(): r for r in rows if r.get("usuario")}
 
 def registrar_usuario_sistema(usuario, password, nombre, tipo_cobro, valor_cobro):
     usuario = usuario.lower().strip()
     if not usuario or not password:
-        return False, "Usuario y contrasena son obligatorios."
+        return False, "Usuario y contraseña son obligatorios."
     if len(password) < 6:
-        return False, "La contrasena debe tener al menos 6 caracteres."
+        return False, "La contraseña debe tener al menos 6 caracteres."
     try:
         client  = _gs_client()
         sheet   = client.open_by_url(URL_SHEET)
         ws      = _get_hoja_usuarios(sheet)
         existentes = [r["usuario"] for r in ws.get_all_records() if r.get("usuario")]
         if usuario in existentes:
-            return False, f"El usuario ya existe."
+            return False, "El usuario ya existe."
         ws.append_row([
             usuario, _hash(password), nombre.strip(),
             tipo_cobro, valor_cobro,
             datetime.now().strftime("%d/%m/%Y %H:%M")
         ])
+        cargar_usuarios_sistema.clear() # Limpiamos caché para que detecte al nuevo
         return True, ""
     except Exception as e:
         return False, str(e)
@@ -117,6 +116,7 @@ def eliminar_usuario_sistema(usuario):
         for i, val in enumerate(celdas):
             if val == usuario:
                 ws.delete_rows(i + 1)
+                cargar_usuarios_sistema.clear() # Limpiamos caché
                 return True
     except Exception:
         pass
@@ -131,6 +131,7 @@ def cambiar_password_usuario(usuario, nueva_password):
         for i, val in enumerate(celdas):
             if val == usuario:
                 ws.update_cell(i + 1, 2, _hash(nueva_password))
+                cargar_usuarios_sistema.clear() # Limpiamos caché
                 return True
     except Exception:
         pass
@@ -142,9 +143,10 @@ def validar_usuario(u, c):
     try:
         usuarios = cargar_usuarios_sistema()
         if u in usuarios:
-            return usuarios[u].get("password_hash") == _hash(c)
+            return str(usuarios[u].get("password_hash")) == _hash(c)
     except Exception:
-        pass
+        # Ahora si falla, te avisará en lugar de decir "contraseña incorrecta"
+        st.error("⚠️ Google Sheets está saturado (Límite de lecturas). Espera 1 minuto.")
     return False
 
 def get_info_usuario(u):
