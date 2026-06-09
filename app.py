@@ -1912,11 +1912,46 @@ elif menu == "🎥 Videoteca":
 
 
 # =====================================================
-# 👑 PANEL ADMIN — Gestión completa de preparadores
+# 👑 PANEL ADMIN — Optimizado contra Error 429 (Límites de Google)
 # =====================================================
 elif menu == "👑 Panel Admin":
     st.title("👑 Panel de Control Bio Sport")
     st.caption("Solo visible para el administrador del sistema.")
+
+    # --- SISTEMA ANTI-COLAPSO DE GOOGLE SHEETS ---
+    if st.button("🔄 Actualizar Datos de la Nube", use_container_width=True):
+        st.session_state.pop("admin_cache", None)
+        st.rerun()
+
+    if "admin_cache" not in st.session_state:
+        with st.spinner("Descargando base de datos global de forma segura..."):
+            try:
+                client = _gs_client()
+                sheet  = client.open_by_url(URL_SHEET)
+                usr_db = cargar_usuarios_sistema()
+                
+                # Descargamos la data de todos los entrenadores de UNA sola vez
+                datos_entrenadores = {}
+                for usr in usr_db.keys():
+                    try:
+                        ws = sheet.worksheet(usr)
+                        vals = ws.col_values(1)
+                        if vals:
+                            datos_entrenadores[usr] = json.loads("".join(vals))
+                    except Exception:
+                        datos_entrenadores[usr] = {}
+                        
+                st.session_state.admin_cache = {
+                    "usuarios": usr_db,
+                    "datos": datos_entrenadores
+                }
+            except Exception as e:
+                st.error(f"Error de conexión: {e}")
+                st.stop()
+
+    cache = st.session_state.admin_cache
+    usuarios_db = cache["usuarios"]
+    datos_completos = cache["datos"]
 
     tab_usuarios, tab_cobros, tab_ranking = st.tabs([
         "👥 Gestión de Preparadores",
@@ -1927,10 +1962,6 @@ elif menu == "👑 Panel Admin":
     # ── TAB 1: GESTIÓN DE USUARIOS ──────────────────────
     with tab_usuarios:
         st.subheader("Preparadores registrados")
-
-        with st.spinner("Cargando usuarios..."):
-            usuarios_db = cargar_usuarios_sistema()
-
         if usuarios_db:
             filas_u = []
             for usr, info in usuarios_db.items():
@@ -1944,8 +1975,7 @@ elif menu == "👑 Panel Admin":
                     "Valor":           trato,
                     "Registrado":      info.get("fecha_registro","—"),
                 })
-            st.dataframe(pd.DataFrame(filas_u),
-                         use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(filas_u), use_container_width=True, hide_index=True)
         else:
             st.info("No hay preparadores registrados aún.")
 
@@ -1971,25 +2001,18 @@ elif menu == "👑 Panel Admin":
                 "Valor ($):", min_value=0, value=2500, step=500, key="reg_valor",
                 help="Si es por alumno: precio por cada atleta. Si es fijo: monto mensual total.")
             rc3.markdown("<br>", unsafe_allow_html=True)
-            rc3.caption(
-                f"Ejemplo: {valor_cobro:,} {'por cada atleta' if tipo_cobro=='por_alumno' else 'al mes'}")
+            rc3.caption(f"Ejemplo: {valor_cobro:,} {'por cada atleta' if tipo_cobro=='por_alumno' else 'al mes'}")
 
-            if st.button("✅ Crear cuenta de preparador",
-                         type="primary", key="btn_crear_usuario", use_container_width=True):
+            if st.button("✅ Crear cuenta de preparador", type="primary", key="btn_crear_usuario", use_container_width=True):
                 if new_pass != new_pass2:
                     st.error("❌ Las contraseñas no coinciden.")
                 elif not new_nombre.strip():
                     st.error("❌ El nombre completo es obligatorio.")
                 else:
-                    ok, msg = registrar_usuario_sistema(
-                        new_usuario, new_pass, new_nombre, tipo_cobro, valor_cobro)
+                    ok, msg = registrar_usuario_sistema(new_usuario, new_pass, new_nombre, tipo_cobro, valor_cobro)
                     if ok:
                         st.success("Preparador registrado correctamente.")
-                        st.info(
-                            "El preparador puede ingresar con:\n"
-                            f"Usuario: {new_usuario.lower().strip()}\n"
-                            "Contrasena: la que ingresaste"
-                        )
+                        st.session_state.pop("admin_cache", None) # Limpiar cache para refrescar
                         st.rerun()
                     else:
                         st.error(f"❌ Error: {msg}")
@@ -2011,6 +2034,7 @@ elif menu == "👑 Panel Admin":
                     else:
                         if cambiar_password_usuario(usr_cambiar, nueva_pw):
                             st.success(f"Contraseña de '{usr_cambiar}' actualizada ✅")
+                            st.session_state.pop("admin_cache", None)
                         else:
                             st.error("Error al actualizar.")
             else:
@@ -2021,12 +2045,12 @@ elif menu == "👑 Panel Admin":
         # ── ELIMINAR PREPARADOR ──
         with st.expander("🗑️ Eliminar preparador"):
             if usuarios_db:
-                st.warning("⚠️ Esta acción elimina el acceso del preparador. "
-                           "Sus datos de atletas en Sheets NO se borran.")
+                st.warning("⚠️ Esta acción elimina el acceso del preparador. Sus datos en Sheets NO se borran.")
                 usr_del = st.selectbox("Selecciona:", list(usuarios_db.keys()), key="del_usr")
                 if st.button(f"Eliminar a {usr_del}", key="btn_del_usr", type="primary"):
                     if eliminar_usuario_sistema(usr_del):
                         st.success(f"'{usr_del}' eliminado del sistema ✅")
+                        st.session_state.pop("admin_cache", None)
                         st.rerun()
                     else:
                         st.error("Error al eliminar.")
@@ -2036,102 +2060,68 @@ elif menu == "👑 Panel Admin":
     # ── TAB 2: COBROS DEL MES ────────────────────────────
     with tab_cobros:
         st.subheader("Resumen de cobros — " + datetime.now().strftime("%B %Y").capitalize())
+        cobros = []; total = 0
+        for usr, info in usuarios_db.items():
+            jd = datos_completos.get(usr, {})
+            n  = len(jd.get("clientes", {}))
+            tc = info.get("tipo_cobro", "por_alumno")
+            vc = int(info.get("valor_cobro", 0))
+            mo = n * vc if tc == "por_alumno" else vc
+            
+            cobros.append({
+                "Preparador":  info.get("nombre_completo", usr),
+                "Usuario":     usr,
+                "Alumnos":     n,
+                "Modalidad":   "Por alumno" if tc=="por_alumno" else "Fijo mensual",
+                "Valor unit.": f"${vc:,}",
+                "Total ($)":   mo,
+            })
+            total += mo
 
-        with st.spinner("Calculando cobros..."):
-            try:
-                client = _gs_client()
-                sheet  = client.open_by_url(URL_SHEET)
-                usuarios_db2 = cargar_usuarios_sistema()
-                cobros = []; total = 0
+        if cobros:
+            df_cobros = pd.DataFrame(cobros)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Preparadores activos", len(cobros))
+            c2.metric("Alumnos totales",      sum(x["Alumnos"] for x in cobros))
+            c3.metric("Total a recaudar",      f"${total:,}")
+            st.divider()
+            
+            df_cobros["Total ($)"] = df_cobros["Total ($)"].apply(lambda x: f"${x:,}")
+            st.dataframe(df_cobros, use_container_width=True, hide_index=True)
 
-                for usr, info in usuarios_db2.items():
-                    try:
-                        ws   = sheet.worksheet(usr)
-                        vals = ws.col_values(1)
-                        if vals:
-                            jd = json.loads("".join(vals))
-                            n  = len(jd.get("clientes", {}))
-                            tc = info.get("tipo_cobro", "por_alumno")
-                            vc = int(info.get("valor_cobro", 0))
-                            mo = n * vc if tc == "por_alumno" else vc
-                            cobros.append({
-                                "Preparador":  info.get("nombre_completo", usr),
-                                "Usuario":     usr,
-                                "Alumnos":     n,
-                                "Modalidad":   "Por alumno" if tc=="por_alumno" else "Fijo mensual",
-                                "Valor unit.": f"${vc:,}",
-                                "Total ($)":   mo,
-                            })
-                            total += mo
-                    except Exception:
-                        continue
-
-                if cobros:
-                    df_cobros = pd.DataFrame(cobros)
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Preparadores activos", len(cobros))
-                    c2.metric("Alumnos totales",      sum(x["Alumnos"] for x in cobros))
-                    c3.metric("Total a recaudar",      f"${total:,}")
-                    st.divider()
-                    # Mostrar tabla con formato
-                    df_cobros["Total ($)"] = df_cobros["Total ($)"].apply(lambda x: f"${x:,}")
-                    st.dataframe(df_cobros, use_container_width=True, hide_index=True)
-
-                    # Exportar cobros
-                    csv_cobros = df_cobros.to_csv(index=False).encode("utf-8")
-                    st.download_button(
-                        "📊 Exportar cobros CSV",
-                        data=csv_cobros,
-                        file_name=f"cobros_{datetime.now().strftime('%Y_%m')}.csv",
-                        mime="text/csv",
-                        key="btn_export_cobros"
-                    )
-                else:
-                    st.info("No hay preparadores con datos registrados aún.")
-            except Exception as e:
-                st.error(f"Error: {e}")
+            csv_cobros = df_cobros.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📊 Exportar cobros CSV",
+                data=csv_cobros,
+                file_name=f"cobros_{datetime.now().strftime('%Y_%m')}.csv",
+                mime="text/csv",
+                key="btn_export_cobros"
+            )
+        else:
+            st.info("No hay preparadores con datos registrados aún.")
 
     # ── TAB 3: RANKING ───────────────────────────────────
     with tab_ranking:
         st.subheader("Ranking de actividad — últimos 30 días")
+        ranking = []
+        for usr, info in usuarios_db.items():
+            jd = datos_completos.get(usr, {})
+            for nom in jd.get("clientes", {}):
+                r30 = [r for r in jd.get("historial", [])
+                       if r["Cliente"] == nom and
+                       (date.today() - datetime.strptime(r["Fecha"], "%d/%m/%Y").date()).days <= 30]
+                ranking.append({
+                    "Atleta":       nom,
+                    "Preparador":   info.get("nombre_completo", usr),
+                    "Sesiones 30d": len(r30),
+                })
 
-        with st.spinner("Cargando actividad..."):
-            try:
-                client = _gs_client()
-                sheet  = client.open_by_url(URL_SHEET)
-                usuarios_db3 = cargar_usuarios_sistema()
-                ranking = []
-
-                for usr, info in usuarios_db3.items():
-                    try:
-                        ws   = sheet.worksheet(usr)
-                        vals = ws.col_values(1)
-                        if vals:
-                            jd = json.loads("".join(vals))
-                            for nom in jd.get("clientes", {}):
-                                r30 = [r for r in jd.get("historial", [])
-                                       if r["Cliente"] == nom and
-                                       (date.today() - datetime.strptime(
-                                           r["Fecha"], "%d/%m/%Y").date()).days <= 30]
-                                ranking.append({
-                                    "Atleta":       nom,
-                                    "Preparador":   info.get("nombre_completo", usr),
-                                    "Sesiones 30d": len(r30),
-                                })
-                    except Exception:
-                        continue
-
-                if ranking:
-                    df_rank = pd.DataFrame(ranking).sort_values(
-                        "Sesiones 30d", ascending=False)
-                    st.dataframe(df_rank, use_container_width=True, hide_index=True)
-
-                    # Métricas del ranking
-                    st.divider()
-                    top = df_rank.iloc[0]
-                    st.success(f"🏆 Atleta más activo: **{top['Atleta']}** "
-                               f"({top['Preparador']}) — {top['Sesiones 30d']} sesiones")
-                else:
-                    st.info("Sin actividad registrada en los últimos 30 días.")
-            except Exception as e:
-                st.error(f"Error: {e}")
+        if ranking:
+            df_rank = pd.DataFrame(ranking).sort_values("Sesiones 30d", ascending=False)
+            st.dataframe(df_rank, use_container_width=True, hide_index=True)
+            st.divider()
+            top = df_rank.iloc[0]
+            st.success(f"🏆 Atleta más activo: **{top['Atleta']}** "
+                       f"({top['Preparador']}) — {top['Sesiones 30d']} sesiones")
+        else:
+            st.info("Sin actividad registrada en los últimos 30 días.")
