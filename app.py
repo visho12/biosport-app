@@ -58,25 +58,102 @@ h1,h2,h3{font-family:'Bebas Neue',sans-serif;letter-spacing:2px}
 """, unsafe_allow_html=True)
 
 # =====================================================
-# AUTENTICACION
+# AUTENTICACION — Sistema dinamico con registro
+# Superusuario: visho (hardcodeado)
+# Resto de usuarios: guardados en hoja "usuarios_sistema" de Sheets
 # =====================================================
 def _hash(p): return hashlib.sha256(p.encode()).hexdigest()
 
-def validar_usuario(u, c):
+ADMIN_USER = "visho"
+ADMIN_PASS = st.secrets.get("PW_VISHO", "Bio2026")
+
+def _get_hoja_usuarios(sheet):
     try:
-        us = st.secrets.get("usuarios", {})
-        if us:
-            h = us.get(u)
-            return h == _hash(c) if h else False
+        return sheet.worksheet("usuarios_sistema")
+    except gspread.exceptions.WorksheetNotFound:
+        ws = sheet.add_worksheet(title="usuarios_sistema", rows="200", cols="6")
+        ws.append_row(["usuario","password_hash","nombre_completo",
+                       "tipo_cobro","valor_cobro","fecha_registro"])
+        return ws
+
+def cargar_usuarios_sistema():
+    try:
+        client = _gs_client()
+        sheet  = client.open_by_url(URL_SHEET)
+        ws     = _get_hoja_usuarios(sheet)
+        rows   = ws.get_all_records()
+        return {r["usuario"]: r for r in rows if r.get("usuario")}
+    except Exception:
+        return {}
+
+def registrar_usuario_sistema(usuario, password, nombre, tipo_cobro, valor_cobro):
+    usuario = usuario.lower().strip()
+    if not usuario or not password:
+        return False, "Usuario y contrasena son obligatorios."
+    if len(password) < 6:
+        return False, "La contrasena debe tener al menos 6 caracteres."
+    try:
+        client  = _gs_client()
+        sheet   = client.open_by_url(URL_SHEET)
+        ws      = _get_hoja_usuarios(sheet)
+        existentes = [r["usuario"] for r in ws.get_all_records() if r.get("usuario")]
+        if usuario in existentes:
+            return False, f"El usuario ya existe."
+        ws.append_row([
+            usuario, _hash(password), nombre.strip(),
+            tipo_cobro, valor_cobro,
+            datetime.now().strftime("%d/%m/%Y %H:%M")
+        ])
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+def eliminar_usuario_sistema(usuario):
+    try:
+        client = _gs_client()
+        sheet  = client.open_by_url(URL_SHEET)
+        ws     = _get_hoja_usuarios(sheet)
+        celdas = ws.col_values(1)
+        for i, val in enumerate(celdas):
+            if val == usuario:
+                ws.delete_rows(i + 1)
+                return True
     except Exception:
         pass
-    fb = {
-        "visho":    st.secrets.get("PW_VISHO",    "Bio2026"),
-        "eduardo":  st.secrets.get("PW_EDUARDO",  "Bio2026"),
-        "davidp":   st.secrets.get("PW_DAVIDP",   "Davidp2026"),
-        "clemente": st.secrets.get("PW_CLEMENTE", "Clemente2026"),
-    }
-    return fb.get(u) == c
+    return False
+
+def cambiar_password_usuario(usuario, nueva_password):
+    try:
+        client = _gs_client()
+        sheet  = client.open_by_url(URL_SHEET)
+        ws     = _get_hoja_usuarios(sheet)
+        celdas = ws.col_values(1)
+        for i, val in enumerate(celdas):
+            if val == usuario:
+                ws.update_cell(i + 1, 2, _hash(nueva_password))
+                return True
+    except Exception:
+        pass
+    return False
+
+def validar_usuario(u, c):
+    if u == ADMIN_USER:
+        return c == ADMIN_PASS
+    try:
+        usuarios = cargar_usuarios_sistema()
+        if u in usuarios:
+            return usuarios[u].get("password_hash") == _hash(c)
+    except Exception:
+        pass
+    return False
+
+def get_info_usuario(u):
+    if u == ADMIN_USER:
+        return {"nombre_completo":"Administrador","tipo_cobro":"admin","valor_cobro":0}
+    try:
+        return cargar_usuarios_sistema().get(u, {})
+    except Exception:
+        return {}
 
 def login():
     if not st.session_state.get("autenticado", False):
@@ -84,26 +161,35 @@ def login():
         with col:
             st.markdown("""<div style='text-align:center;padding:36px 0 20px'>
               <span style='font-family:Bebas Neue,sans-serif;font-size:3rem;
-                color:#39FF14;letter-spacing:4px'>⚡ BIO SPORT</span><br>
+                color:#39FF14;letter-spacing:4px'>BIOSPORT PRO</span><br>
               <span style='color:#888;font-size:.85rem;letter-spacing:2px'>
                 PLATAFORMA DE ALTO RENDIMIENTO</span></div>""", unsafe_allow_html=True)
-            with st.form("login_form"):
-                u = st.text_input("Usuario", placeholder="tu usuario").lower().strip()
-                c = st.text_input("Contraseña", type="password", placeholder="••••••••")
-                if st.form_submit_button("ENTRAR", type="primary", use_container_width=True):
-                    if validar_usuario(u, c):
-                        st.session_state.autenticado    = True
-                        st.session_state.usuario_actual = u
-                        st.rerun()
-                    else:
-                        st.error("Credenciales incorrectas")
+            tab_login, tab_info = st.tabs(["Ingresar","Sin cuenta?"])
+            with tab_login:
+                with st.form("login_form"):
+                    u = st.text_input("Usuario", placeholder="tu usuario").lower().strip()
+                    c = st.text_input("Contrasena", type="password", placeholder="...")
+                    if st.form_submit_button("ENTRAR", type="primary", use_container_width=True):
+                        if validar_usuario(u, c):
+                            info = get_info_usuario(u)
+                            st.session_state.autenticado    = True
+                            st.session_state.usuario_actual = u
+                            st.session_state.nombre_usuario = info.get("nombre_completo", u.capitalize())
+                            st.session_state.es_admin       = (u == ADMIN_USER)
+                            st.rerun()
+                        else:
+                            st.error("Credenciales incorrectas")
+            with tab_info:
+                st.info("Contacta al administrador para obtener acceso.")
+
         return False
     return True
 
 if not login(): st.stop()
 
-st.sidebar.markdown(f"**👤 {st.session_state['usuario_actual'].capitalize()}**")
-if st.sidebar.button("Cerrar sesión", key="btn_cerrar_sesion"):
+_nombre_sb = st.session_state.get("nombre_usuario", st.session_state["usuario_actual"].capitalize())
+st.sidebar.markdown(f"**{_nombre_sb}**")
+if st.sidebar.button("Cerrar sesion", key="btn_cerrar_sesion"):
     for k in list(st.session_state): del st.session_state[k]
     st.rerun()
 
@@ -1774,60 +1860,228 @@ elif menu == "🎥 Videoteca":
         else:
             st.info("La videoteca está vacía.")
 
+
 # =====================================================
-# 👑 PANEL ADMIN
+# 👑 PANEL ADMIN — Gestión completa de preparadores
 # =====================================================
 elif menu == "👑 Panel Admin":
     st.title("👑 Panel de Control Bio Sport")
-    try:
-        client = _gs_client(); sheet = client.open_by_url(URL_SHEET)
-        reglas = {
-            "eduardo":  {"tipo":"por_alumno","valor":2500},
-            "davidp":   {"tipo":"fijo",      "valor":10000},
-            "clemente": {"tipo":"por_alumno","valor":2500},
-        }
-        cobros=[]; total=0
-        for prep, regla in reglas.items():
-            try:
-                ws   = sheet.worksheet(prep)
-                vals = ws.col_values(1)
-                if vals:
-                    jd = json.loads("".join(vals))
-                    n  = len(jd.get("clientes",{}))
-                    mo = n*regla["valor"] if regla["tipo"]=="por_alumno" else regla["valor"]
-                    cobros.append({"Preparador":prep.capitalize(),"Alumnos":n,
-                                   "Trato":f"${regla['valor']:,}/alumno"
-                                          if regla["tipo"]=="por_alumno" else "Cuota Fija",
-                                   "Monto":f"${mo:,}"})
-                    total += mo
-            except Exception:
-                continue
-        if cobros:
-            c1,c2 = st.columns(2)
-            c1.metric("Alumnos Totales", sum(x["Alumnos"] for x in cobros))
-            c2.metric("Total a Recaudar",f"${total:,}")
-            st.table(pd.DataFrame(cobros))
+    st.caption("Solo visible para el administrador del sistema.")
 
-            st.subheader("🏆 Ranking de Actividad (30 días)")
-            ranking=[]
-            for prep in reglas:
-                try:
-                    ws = sheet.worksheet(prep); vals=ws.col_values(1)
-                    if vals:
-                        jd = json.loads("".join(vals))
-                        for nom in jd.get("clientes",{}):
-                            r30=[r for r in jd.get("historial",[])
-                                 if r["Cliente"]==nom and
-                                 (date.today()-datetime.strptime(r["Fecha"],"%d/%m/%Y").date()).days<=30]
-                            ranking.append({"Atleta":nom,
-                                            "Preparador":prep.capitalize(),
-                                            "Sesiones 30d":len(r30)})
-                except Exception:
-                    continue
-            if ranking:
-                dfr = pd.DataFrame(ranking).sort_values("Sesiones 30d",ascending=False)
-                st.dataframe(dfr,use_container_width=True,hide_index=True)
+    tab_usuarios, tab_cobros, tab_ranking = st.tabs([
+        "👥 Gestión de Preparadores",
+        "💰 Cobros del Mes",
+        "🏆 Ranking de Actividad"
+    ])
+
+    # ── TAB 1: GESTIÓN DE USUARIOS ──────────────────────
+    with tab_usuarios:
+        st.subheader("Preparadores registrados")
+
+        with st.spinner("Cargando usuarios..."):
+            usuarios_db = cargar_usuarios_sistema()
+
+        if usuarios_db:
+            filas_u = []
+            for usr, info in usuarios_db.items():
+                trato = (f"${int(info.get('valor_cobro',0)):,}/alumno"
+                         if info.get("tipo_cobro") == "por_alumno"
+                         else f"${int(info.get('valor_cobro',0)):,} fijo")
+                filas_u.append({
+                    "Usuario":         usr,
+                    "Nombre":          info.get("nombre_completo","—"),
+                    "Tipo de Cobro":   info.get("tipo_cobro","—"),
+                    "Valor":           trato,
+                    "Registrado":      info.get("fecha_registro","—"),
+                })
+            st.dataframe(pd.DataFrame(filas_u),
+                         use_container_width=True, hide_index=True)
         else:
-            st.warning("No hay datos registrados aún.")
-    except Exception as e:
-        st.error(f"Error cargando panel: {e}")
+            st.info("No hay preparadores registrados aún.")
+
+        st.divider()
+
+        # ── REGISTRAR NUEVO PREPARADOR ──
+        with st.expander("➕ Registrar nuevo preparador", expanded=True):
+            st.markdown("**Completa los datos del nuevo preparador:**")
+            rn1, rn2 = st.columns(2)
+            new_nombre  = rn1.text_input("Nombre completo:", key="reg_nombre")
+            new_usuario = rn2.text_input("Usuario (sin espacios):", key="reg_usuario")
+            rn3, rn4 = st.columns(2)
+            new_pass    = rn3.text_input("Contraseña:", type="password", key="reg_pass")
+            new_pass2   = rn4.text_input("Repetir contraseña:", type="password", key="reg_pass2")
+
+            st.markdown("**Tipo de cobro:**")
+            rc1, rc2, rc3 = st.columns(3)
+            tipo_cobro = rc1.selectbox("Modalidad:",
+                ["por_alumno","fijo_mensual"],
+                format_func=lambda x: "Por alumno" if x=="por_alumno" else "Cuota fija mensual",
+                key="reg_tipo")
+            valor_cobro = rc2.number_input(
+                "Valor ($):", min_value=0, value=2500, step=500, key="reg_valor",
+                help="Si es por alumno: precio por cada atleta. Si es fijo: monto mensual total.")
+            rc3.markdown("<br>", unsafe_allow_html=True)
+            rc3.caption(
+                f"Ejemplo: {valor_cobro:,} {'por cada atleta' if tipo_cobro=='por_alumno' else 'al mes'}")
+
+            if st.button("✅ Crear cuenta de preparador",
+                         type="primary", key="btn_crear_usuario", use_container_width=True):
+                if new_pass != new_pass2:
+                    st.error("❌ Las contraseñas no coinciden.")
+                elif not new_nombre.strip():
+                    st.error("❌ El nombre completo es obligatorio.")
+                else:
+                    ok, msg = registrar_usuario_sistema(
+                        new_usuario, new_pass, new_nombre, tipo_cobro, valor_cobro)
+                    if ok:
+                        st.success("Preparador registrado correctamente.")
+                        st.info(
+                            "El preparador puede ingresar con:\n"
+                            f"Usuario: {new_usuario.lower().strip()}\n"
+                            "Contrasena: la que ingresaste"
+                        )
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Error: {msg}")
+
+        st.divider()
+
+        # ── CAMBIAR CONTRASEÑA ──
+        with st.expander("🔑 Cambiar contraseña de un preparador"):
+            if usuarios_db:
+                cp1, cp2, cp3 = st.columns(3)
+                usr_cambiar = cp1.selectbox("Preparador:", list(usuarios_db.keys()), key="cp_usr")
+                nueva_pw    = cp2.text_input("Nueva contraseña:", type="password", key="cp_new")
+                nueva_pw2   = cp3.text_input("Repetir:", type="password", key="cp_rep")
+                if st.button("Actualizar contraseña", key="btn_cambiar_pw"):
+                    if nueva_pw != nueva_pw2:
+                        st.error("Las contraseñas no coinciden.")
+                    elif len(nueva_pw) < 6:
+                        st.error("Mínimo 6 caracteres.")
+                    else:
+                        if cambiar_password_usuario(usr_cambiar, nueva_pw):
+                            st.success(f"Contraseña de '{usr_cambiar}' actualizada ✅")
+                        else:
+                            st.error("Error al actualizar.")
+            else:
+                st.info("No hay preparadores registrados.")
+
+        st.divider()
+
+        # ── ELIMINAR PREPARADOR ──
+        with st.expander("🗑️ Eliminar preparador"):
+            if usuarios_db:
+                st.warning("⚠️ Esta acción elimina el acceso del preparador. "
+                           "Sus datos de atletas en Sheets NO se borran.")
+                usr_del = st.selectbox("Selecciona:", list(usuarios_db.keys()), key="del_usr")
+                if st.button(f"Eliminar a {usr_del}", key="btn_del_usr", type="primary"):
+                    if eliminar_usuario_sistema(usr_del):
+                        st.success(f"'{usr_del}' eliminado del sistema ✅")
+                        st.rerun()
+                    else:
+                        st.error("Error al eliminar.")
+            else:
+                st.info("No hay preparadores para eliminar.")
+
+    # ── TAB 2: COBROS DEL MES ────────────────────────────
+    with tab_cobros:
+        st.subheader("Resumen de cobros — " + datetime.now().strftime("%B %Y").capitalize())
+
+        with st.spinner("Calculando cobros..."):
+            try:
+                client = _gs_client()
+                sheet  = client.open_by_url(URL_SHEET)
+                usuarios_db2 = cargar_usuarios_sistema()
+                cobros = []; total = 0
+
+                for usr, info in usuarios_db2.items():
+                    try:
+                        ws   = sheet.worksheet(usr)
+                        vals = ws.col_values(1)
+                        if vals:
+                            jd = json.loads("".join(vals))
+                            n  = len(jd.get("clientes", {}))
+                            tc = info.get("tipo_cobro", "por_alumno")
+                            vc = int(info.get("valor_cobro", 0))
+                            mo = n * vc if tc == "por_alumno" else vc
+                            cobros.append({
+                                "Preparador":  info.get("nombre_completo", usr),
+                                "Usuario":     usr,
+                                "Alumnos":     n,
+                                "Modalidad":   "Por alumno" if tc=="por_alumno" else "Fijo mensual",
+                                "Valor unit.": f"${vc:,}",
+                                "Total ($)":   mo,
+                            })
+                            total += mo
+                    except Exception:
+                        continue
+
+                if cobros:
+                    df_cobros = pd.DataFrame(cobros)
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Preparadores activos", len(cobros))
+                    c2.metric("Alumnos totales",      sum(x["Alumnos"] for x in cobros))
+                    c3.metric("Total a recaudar",      f"${total:,}")
+                    st.divider()
+                    # Mostrar tabla con formato
+                    df_cobros["Total ($)"] = df_cobros["Total ($)"].apply(lambda x: f"${x:,}")
+                    st.dataframe(df_cobros, use_container_width=True, hide_index=True)
+
+                    # Exportar cobros
+                    csv_cobros = df_cobros.to_csv(index=False).encode("utf-8")
+                    st.download_button(
+                        "📊 Exportar cobros CSV",
+                        data=csv_cobros,
+                        file_name=f"cobros_{datetime.now().strftime('%Y_%m')}.csv",
+                        mime="text/csv",
+                        key="btn_export_cobros"
+                    )
+                else:
+                    st.info("No hay preparadores con datos registrados aún.")
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+    # ── TAB 3: RANKING ───────────────────────────────────
+    with tab_ranking:
+        st.subheader("Ranking de actividad — últimos 30 días")
+
+        with st.spinner("Cargando actividad..."):
+            try:
+                client = _gs_client()
+                sheet  = client.open_by_url(URL_SHEET)
+                usuarios_db3 = cargar_usuarios_sistema()
+                ranking = []
+
+                for usr, info in usuarios_db3.items():
+                    try:
+                        ws   = sheet.worksheet(usr)
+                        vals = ws.col_values(1)
+                        if vals:
+                            jd = json.loads("".join(vals))
+                            for nom in jd.get("clientes", {}):
+                                r30 = [r for r in jd.get("historial", [])
+                                       if r["Cliente"] == nom and
+                                       (date.today() - datetime.strptime(
+                                           r["Fecha"], "%d/%m/%Y").date()).days <= 30]
+                                ranking.append({
+                                    "Atleta":       nom,
+                                    "Preparador":   info.get("nombre_completo", usr),
+                                    "Sesiones 30d": len(r30),
+                                })
+                    except Exception:
+                        continue
+
+                if ranking:
+                    df_rank = pd.DataFrame(ranking).sort_values(
+                        "Sesiones 30d", ascending=False)
+                    st.dataframe(df_rank, use_container_width=True, hide_index=True)
+
+                    # Métricas del ranking
+                    st.divider()
+                    top = df_rank.iloc[0]
+                    st.success(f"🏆 Atleta más activo: **{top['Atleta']}** "
+                               f"({top['Preparador']}) — {top['Sesiones 30d']} sesiones")
+                else:
+                    st.info("Sin actividad registrada en los últimos 30 días.")
+            except Exception as e:
+                st.error(f"Error: {e}")
