@@ -1099,7 +1099,7 @@ elif menu == "🏋️ Modo En Vivo":
                     unsafe_allow_html=True)
 
 # =====================================================
-# 🧠 PLAN SEMANAL — Rediseño intuitivo
+# 🧠 PLAN SEMANAL — Fix selección tipo semana y grupos
 # =====================================================
 elif menu == "🧠 Plan Semanal":
     c = need_athlete()
@@ -1150,34 +1150,45 @@ elif menu == "🧠 Plan Semanal":
     # ── CABECERA ──────────────────────────────────────────────
     st.title(f"🧠 Plan Semanal — {c}")
 
+    # ── INICIALIZAR ESTADO DE SELECCIONES ─────────────────────
+    # Tipo de semana — inicializar desde datos guardados
+    sk_mc = f"sel_microciclo_{c}"
+    if sk_mc not in st.session_state:
+        guardado = st.session_state.planes_semanales.get(c, {}).get("tipo_semana", TIPOS_MICROCICLO[1])
+        st.session_state[sk_mc] = guardado
+
+    # Grupos por día — inicializar desde datos guardados
+    for dia in DIAS:
+        sk_grp = f"sel_grupo_{c}_{dia}"
+        if sk_grp not in st.session_state:
+            st.session_state[sk_grp] = st.session_state.planes_semanales.get(c, {}).get(dia, "Descanso")
+
     # ── PASO 1: TIPO DE SEMANA ────────────────────────────────
     st.markdown("### 1️⃣ ¿Qué tipo de semana es?")
-    tg = st.session_state.planes_semanales.get(c,{}).get("tipo_semana", TIPOS_MICROCICLO[1])
-    mc_cols = st.columns(3)
     mc_info = {
-        "Ajuste (Descarga)":  ("📉","Descarga","#00BFFF","RPE 5-7 · Técnica y recuperación"),
-        "Carga (Desarrollo)": ("📈","Desarrollo","#39FF14","RPE 7-8.5 · Cargas progresivas"),
-        "Impacto (Choque)":   ("🔥","Choque","#FF4B4B","RPE 9-10 · Máximo esfuerzo"),
+        "Ajuste (Descarga)":  ("📉", "Descarga",   "#00BFFF", "RPE 5-7 · Técnica y recuperación"),
+        "Carga (Desarrollo)": ("📈", "Desarrollo",  "#39FF14", "RPE 7-8.5 · Cargas progresivas"),
+        "Impacto (Choque)":   ("🔥", "Choque",      "#FF4B4B", "RPE 9-10 · Máximo esfuerzo"),
     }
-    mc = tg if tg in TIPOS_MICROCICLO else TIPOS_MICROCICLO[1]
+    mc_cols = st.columns(3)
     for i, (tipo, (ico, label, color, desc)) in enumerate(mc_info.items()):
         with mc_cols[i]:
-            selected = mc == tipo
-            border   = color if selected else "#333"
-            bg       = f"{color}15" if selected else "#1a1a1a"
-            check    = "✓ " if selected else ""
+            selected = st.session_state[sk_mc] == tipo
             if st.button(
-                f"{ico} {check}{label}\n{desc}",
+                f"{ico} {'✓ ' if selected else ''}{label}",
                 key=f"mc_btn_{i}",
                 use_container_width=True,
                 type="primary" if selected else "secondary",
             ):
-                mc = tipo
+                st.session_state[sk_mc] = tipo
+                st.rerun()
             st.markdown(
-                f"<div style='text-align:center;font-size:.75rem;color:{color if selected else '#666'};"
-                f"margin-top:-8px'>{desc}</div>",
+                f"<div style='text-align:center;font-size:.75rem;"
+                f"color:{color if selected else '#666'};margin-top:-8px'>{desc}</div>",
                 unsafe_allow_html=True
             )
+
+    mc = st.session_state[sk_mc]  # valor activo del microciclo
 
     st.divider()
 
@@ -1185,23 +1196,23 @@ elif menu == "🧠 Plan Semanal":
     st.markdown("### 2️⃣ Diseña tu semana")
     st.caption("Haz clic en un día para editarlo 👇")
 
-    # Mapa de colores por grupo
     BADGE_CLASS = {
-        "Descanso":"badge-descanso","Pierna":"badge-pierna",
-        "Pecho/Hombro":"badge-pecho","Espalda":"badge-espalda",
-        "Glúteo":"badge-gluteo","Full Body":"badge-full",
-        "Torso":"badge-torso","Brazo":"badge-brazo","Cardio":"badge-cardio",
+        "Descanso":    "badge-descanso", "Pierna":       "badge-pierna",
+        "Pecho/Hombro":"badge-pecho",    "Espalda":      "badge-espalda",
+        "Glúteo":      "badge-gluteo",   "Full Body":    "badge-full",
+        "Torso":       "badge-torso",    "Brazo":        "badge-brazo",
+        "Cardio":      "badge-cardio",
     }
     ICONOS_GRUPO = {
-        "Descanso":"😴","Pierna":"🦵","Pecho/Hombro":"💪",
-        "Espalda":"🏋️","Glúteo":"🍑","Full Body":"⚡",
-        "Torso":"🔝","Brazo":"💪","Cardio":"🏃",
+        "Descanso":    "😴", "Pierna":       "🦵", "Pecho/Hombro": "💪",
+        "Espalda":     "🏋️", "Glúteo":       "🍑", "Full Body":    "⚡",
+        "Torso":       "🔝", "Brazo":        "💪", "Cardio":       "🏃",
     }
 
     # Resumen visual de la semana (7 chips en fila)
     cols_sem = st.columns(7)
     for i, dia in enumerate(DIAS):
-        foco_actual = st.session_state.planes_semanales.get(c,{}).get(dia,"Descanso")
+        foco_actual = st.session_state[f"sel_grupo_{c}_{dia}"]
         cls  = BADGE_CLASS.get(foco_actual, "badge-descanso")
         ico_ = ICONOS_GRUPO.get(foco_actual, "📅")
         with cols_sem[i]:
@@ -1212,34 +1223,32 @@ elif menu == "🧠 Plan Semanal":
                 <div style='font-size:.7rem;font-weight:700;color:#aaa;
                             letter-spacing:1px'>{dia[:3].upper()}</div>
                 <div style='font-size:.65rem;color:#666;margin-top:2px'>
-                    {foco_actual if foco_actual!="Descanso" else "Descanso"}
+                    {foco_actual if foco_actual != "Descanso" else "Descanso"}
                 </div>
             </div>""", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ── EDITOR DE DÍAS ─────────────────────────────────────────
-    # Estado: qué día está expandido
     if "dia_editando" not in st.session_state:
         st.session_state.dia_editando = None
 
-    nf = {"tipo_semana": mc}
-    nd = {}
-    ops_dia = GRUPOS.copy()
+    grupos_lista = ["Descanso","Pierna","Pecho/Hombro","Espalda","Glúteo",
+                    "Full Body","Torso","Brazo","Cardio"]
 
     for dia in DIAS:
-        vd_actual  = st.session_state.planes_semanales.get(c,{}).get(dia,"Descanso")
-        det_actual = st.session_state.detalles_planes.get(c,{}).get(dia,"")
-        if vd_actual not in ops_dia: ops_dia.append(vd_actual)
+        # Leer grupo activo desde session_state (fuente de verdad)
+        sk_grp     = f"sel_grupo_{c}_{dia}"
+        vd_actual  = st.session_state[sk_grp]
+        det_actual = st.session_state.detalles_planes.get(c, {}).get(dia, "")
 
-        cls   = BADGE_CLASS.get(vd_actual,"badge-descanso")
-        ico_d = ICONOS_GRUPO.get(vd_actual,"📅")
-        # Contar ejercicios existentes
-        n_ejs = len([l for l in det_actual.replace("||","\n").split("\n") if l.strip()]) if det_actual else 0
-        ej_hint = f"{n_ejs} ejercicio{'s' if n_ejs!=1 else ''}" if n_ejs>0 else "Sin detalles"
+        cls   = BADGE_CLASS.get(vd_actual, "badge-descanso")
+        ico_d = ICONOS_GRUPO.get(vd_actual, "📅")
+        n_ejs = len([l for l in det_actual.replace("||", "\n").split("\n") if l.strip()]) if det_actual else 0
+        ej_hint = f"{n_ejs} ejercicio{'s' if n_ejs != 1 else ''}" if n_ejs > 0 else "Sin detalles"
 
-        # Tarjeta del día con botón para editar
-        col_card, col_edit = st.columns([5,1])
+        # Tarjeta del día
+        col_card, col_edit = st.columns([5, 1])
         with col_card:
             st.markdown(f"""
             <div class='dia-card'>
@@ -1251,13 +1260,13 @@ elif menu == "🧠 Plan Semanal":
             </div>""", unsafe_allow_html=True)
         with col_edit:
             st.markdown("<div style='margin-top:12px'>", unsafe_allow_html=True)
-            lbl = "✏️ Editar" if st.session_state.dia_editando != dia else "✅ Listo"
+            lbl = "✅ Listo" if st.session_state.dia_editando == dia else "✏️ Editar"
             if st.button(lbl, key=f"edit_btn_{dia}", use_container_width=True):
-                st.session_state.dia_editando = None if st.session_state.dia_editando==dia else dia
+                st.session_state.dia_editando = None if st.session_state.dia_editando == dia else dia
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # Panel de edición inline (solo si este día está seleccionado)
+        # Panel de edición inline
         if st.session_state.dia_editando == dia:
             with st.container():
                 st.markdown(f"""
@@ -1269,34 +1278,33 @@ elif menu == "🧠 Plan Semanal":
                     </div>
                 </div>""", unsafe_allow_html=True)
 
-                # Selector de grupo muscular como botones visuales
+                # ── SELECTOR DE GRUPO — botones que guardan en session_state ──
                 st.markdown("**¿Qué se trabaja este día?**")
                 gcols = st.columns(5)
-                grupos_lista = ["Descanso","Pierna","Pecho/Hombro","Espalda","Glúteo",
-                                "Full Body","Torso","Brazo","Cardio"]
-                nuevo_grupo = vd_actual
                 for gi, grp in enumerate(grupos_lista):
                     with gcols[gi % 5]:
-                        sel_g = grp == vd_actual
+                        sel_g = vd_actual == grp
                         if st.button(
-                            f"{ICONOS_GRUPO.get(grp,'📅')} {grp}",
+                            f"{ICONOS_GRUPO.get(grp, '📅')} {grp}",
                             key=f"grp_{dia}_{gi}",
                             use_container_width=True,
                             type="primary" if sel_g else "secondary"
                         ):
-                            nuevo_grupo = grp
-                nf[dia] = nuevo_grupo
+                            # Guardar selección en session_state inmediatamente
+                            st.session_state[sk_grp] = grp
+                            st.rerun()
+
+                # Leer el grupo actualizado (puede haber cambiado con el botón de arriba)
+                nuevo_grupo = st.session_state[sk_grp]
 
                 if nuevo_grupo != "Descanso":
                     st.markdown("<br>**Ejercicios del día**", unsafe_allow_html=True)
 
-                    # Parsear detalles existentes
                     prev = det_actual.split("||") if "||" in det_actual else ["", det_actual, ""]
-                    d0 = prev[0] if len(prev)>0 else ""
-                    d1 = prev[1] if len(prev)>1 else ""
-                    d2 = prev[2] if len(prev)>2 else ""
+                    d0 = prev[0] if len(prev) > 0 else ""
+                    d1 = prev[1] if len(prev) > 1 else ""
+                    d2 = prev[2] if len(prev) > 2 else ""
 
-                    # Entrada simplificada: UN campo por bloque con placeholder guía
                     ec1, ec2, ec3 = st.columns(3)
                     with ec1:
                         st.markdown("🔥 **Calentamiento**")
@@ -1311,7 +1319,7 @@ elif menu == "🧠 Plan Semanal":
                         st.caption("Un ejercicio por línea")
                         des = st.text_area(
                             "des", value=d1, height=160,
-                            placeholder="Ej:\nSentadilla: 4x8 @80kg\nPrensa: 3x12 @100kg\nExtensión: 3x15",
+                            placeholder="Ej:\nSentadilla: 4x8 @80kg\nPrensa: 3x12 @100kg",
                             label_visibility="collapsed", key=f"des_{dia}"
                         )
                     with ec3:
@@ -1319,13 +1327,17 @@ elif menu == "🧠 Plan Semanal":
                         st.caption("Estiramientos y movilidad")
                         vue = st.text_area(
                             "vue", value=d2, height=160,
-                            placeholder="Ej:\nEstiramiento cuádriceps\nFoam roller pierna\nRespiración 2 min",
+                            placeholder="Ej:\nEstiramiento cuádriceps\nFoam roller",
                             label_visibility="collapsed", key=f"vue_{dia}"
                         )
-                    nd[dia] = f"{cal}||{des}||{vue}"
 
-                    # Botón Dante para ESTE día
-                    df_c = st.session_state.db_clientes.get(c,{})
+                    # Guardar los text_areas en session_state para no perderlos
+                    st.session_state[f"det_cal_{c}_{dia}"] = cal
+                    st.session_state[f"det_des_{c}_{dia}"] = des
+                    st.session_state[f"det_vue_{c}_{dia}"] = vue
+
+                    # Botón Dante
+                    df_c = st.session_state.db_clientes.get(c, {})
                     pf_d = (f"Edad:{df_c.get('Edad','?')}, Exp:{df_c.get('Experiencia','?')}, "
                             f"Lesiones:{df_c.get('Lesiones','Ninguna')}")
                     if st.button(f"🤖 Dante: generar rutina de {nuevo_grupo}",
@@ -1342,13 +1354,12 @@ elif menu == "🧠 Plan Semanal":
                                         f"VUELTA A LA CALMA:\n[estiramientos]"
                                     )
                                     txt_dante = r.text
-                                    # Parsear respuesta de Dante automáticamente
-                                    partes_d = txt_dante.split("---")
+                                    partes_d  = txt_dante.split("---")
                                     if len(partes_d) >= 3:
-                                        st.success("✅ Dante generó la rutina — cópiala arriba o guarda directo:")
-                                        st.session_state[f"dante_cal_{dia}"] = partes_d[0].replace("CALENTAMIENTO:","").strip()
-                                        st.session_state[f"dante_des_{dia}"] = partes_d[1].replace("DESARROLLO:","").strip()
-                                        st.session_state[f"dante_vue_{dia}"] = partes_d[2].replace("VUELTA A LA CALMA:","").strip()
+                                        st.success("✅ Dante generó la rutina — aplícala abajo:")
+                                        st.session_state[f"dante_cal_{dia}"] = partes_d[0].replace("CALENTAMIENTO:", "").strip()
+                                        st.session_state[f"dante_des_{dia}"] = partes_d[1].replace("DESARROLLO:", "").strip()
+                                        st.session_state[f"dante_vue_{dia}"] = partes_d[2].replace("VUELTA A LA CALMA:", "").strip()
                                     else:
                                         st.markdown(txt_dante)
                                 except Exception as e:
@@ -1356,59 +1367,92 @@ elif menu == "🧠 Plan Semanal":
                         else:
                             st.warning("Dante no disponible.")
 
-                    # Si Dante generó algo, ofrecer aplicarlo
                     if st.session_state.get(f"dante_cal_{dia}"):
                         with st.expander("👁️ Ver propuesta de Dante", expanded=True):
-                            dc1,dc2,dc3 = st.columns(3)
+                            dc1, dc2, dc3 = st.columns(3)
                             dc1.markdown(f"**Calentamiento:**\n{st.session_state[f'dante_cal_{dia}']}")
                             dc2.markdown(f"**Desarrollo:**\n{st.session_state[f'dante_des_{dia}']}")
                             dc3.markdown(f"**Vuelta:**\n{st.session_state[f'dante_vue_{dia}']}")
                             if st.button("✅ Aplicar propuesta de Dante", key=f"apply_dante_{dia}",
                                          use_container_width=True, type="primary"):
-                                nd[dia] = (f"{st.session_state[f'dante_cal_{dia}']}"
-                                           f"||{st.session_state[f'dante_des_{dia}']}"
-                                           f"||{st.session_state[f'dante_vue_{dia}']}")
-                                nf[dia] = nuevo_grupo
-                                st.session_state.planes_semanales[c] = nf
-                                st.session_state.detalles_planes[c]  = nd
-                                # Limpiar estado Dante
-                                for k_ in [f"dante_cal_{dia}",f"dante_des_{dia}",f"dante_vue_{dia}"]:
+                                # Guardar directamente en detalles_planes
+                                st.session_state.detalles_planes.setdefault(c, {})[dia] = (
+                                    f"{st.session_state[f'dante_cal_{dia}']}"
+                                    f"||{st.session_state[f'dante_des_{dia}']}"
+                                    f"||{st.session_state[f'dante_vue_{dia}']}"
+                                )
+                                st.session_state.planes_semanales.setdefault(c, {})[dia] = nuevo_grupo
+                                for k_ in [f"dante_cal_{dia}", f"dante_des_{dia}", f"dante_vue_{dia}"]:
                                     st.session_state.pop(k_, None)
-                                guardar_datos(); st.toast(f"Rutina de Dante aplicada a {dia} ✅"); st.rerun()
+                                guardar_datos()
+                                st.toast(f"Rutina de Dante aplicada a {dia} ✅")
+                                st.rerun()
                 else:
-                    nf[dia] = "Descanso"
-                    nd[dia] = ""
                     st.info("😴 Día de descanso — el atleta no entrena.")
-        else:
-            # Día no editado: conservar valores actuales
-            nf[dia] = vd_actual
-            nd[dia] = det_actual
 
     st.divider()
 
     # ── ACCIONES FINALES ───────────────────────────────────────
     st.markdown("### 3️⃣ Guardar y exportar")
     ca_f, cb_f, cc_f = st.columns(3)
+
     with ca_f:
         if st.button("💾 Guardar Plan Completo", type="primary",
                      key="btn_guardar_plan", use_container_width=True):
+            # Construir nf y nd desde session_state (fuente de verdad)
+            nf = {"tipo_semana": st.session_state[sk_mc]}
+            nd = {}
+            for dia in DIAS:
+                sk_grp = f"sel_grupo_{c}_{dia}"
+                grp    = st.session_state.get(sk_grp, "Descanso")
+                nf[dia] = grp
+                if grp != "Descanso":
+                    cal_ = st.session_state.get(f"det_cal_{c}_{dia}",
+                           st.session_state.get(f"cal_{dia}", ""))
+                    des_ = st.session_state.get(f"det_des_{c}_{dia}",
+                           st.session_state.get(f"des_{dia}", ""))
+                    vue_ = st.session_state.get(f"det_vue_{c}_{dia}",
+                           st.session_state.get(f"vue_{dia}", ""))
+                    nd[dia] = f"{cal_}||{des_}||{vue_}"
+                else:
+                    nd[dia] = ""
+
             st.session_state.planes_semanales[c] = nf
             st.session_state.detalles_planes[c]  = nd
             st.session_state.dia_editando        = None
             ok = guardar_datos()
-            if ok: st.toast("Plan guardado ✅"); st.rerun()
-            else:  st.error("Error al guardar")
+            if ok:
+                st.toast("Plan guardado ✅")
+                st.rerun()
+            else:
+                st.error("Error al guardar")
+
     with cb_f:
         if st.button("🔄 Importar del Historial",
                      key="btn_cargar_historial", use_container_width=True):
-            importar_historial(c); st.toast("Historial importado ✅"); st.rerun()
+            importar_historial(c)
+            # Sincronizar session_state con los datos importados
+            for dia in DIAS:
+                sk_grp = f"sel_grupo_{c}_{dia}"
+                st.session_state[sk_grp] = st.session_state.planes_semanales.get(c, {}).get(dia, "Descanso")
+            st.session_state[sk_mc] = st.session_state.planes_semanales.get(c, {}).get("tipo_semana", TIPOS_MICROCICLO[1])
+            st.toast("Historial importado ✅")
+            st.rerun()
+
     with cc_f:
         if REPORTLAB_OK:
             try:
-                pb = pdf_plan(c, nf, nd)
+                # Construir nf/nd desde session_state para el PDF
+                nf_pdf = {"tipo_semana": st.session_state[sk_mc]}
+                nd_pdf = {}
+                for dia in DIAS:
+                    grp = st.session_state.get(f"sel_grupo_{c}_{dia}", "Descanso")
+                    nf_pdf[dia] = grp
+                    nd_pdf[dia] = st.session_state.detalles_planes.get(c, {}).get(dia, "")
+                pb = pdf_plan(c, nf_pdf, nd_pdf)
                 if pb:
                     st.download_button("📄 Descargar PDF", data=pb,
-                        file_name=f"Rutina_{c.replace(' ','_')}.pdf",
+                        file_name=f"Rutina_{c.replace(' ', '_')}.pdf",
                         mime="application/pdf", use_container_width=True)
             except Exception as e:
                 st.error(f"Error PDF: {e}")
