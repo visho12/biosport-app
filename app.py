@@ -19,24 +19,6 @@ from core.auth import (
     login, registrar_usuario_sistema, eliminar_usuario_sistema, 
     cambiar_password_usuario, cargar_usuarios_sistema
 )
-# --- IA ---
-import google.generativeai as genai
-try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    _mv = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
-    modelo_dante = genai.GenerativeModel(_mv[0]) if _mv else None
-except Exception:
-    modelo_dante = None
-
-# --- PDF ---
-try:
-    from reportlab.pdfgen import canvas as rl_canvas
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.colors import HexColor
-    from reportlab.lib import colors
-    REPORTLAB_OK = True
-except ImportError:
-    REPORTLAB_OK = False
 
 # --- EXCEL ---
 try:
