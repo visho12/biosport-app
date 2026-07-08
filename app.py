@@ -11,7 +11,8 @@ from domain.calculators import calc_1rm, calc_durnin, eval_grasa, calc_tmb, calc
 from core.constants import (
     VIDEOS_BASE, OBJETIVOS, TIPOS_CARDIO, TIPOS_TEST, DIAS, GRUPOS,
     TIPOS_MICROCICLO, TABLA_BADILLO, GUIAS_BOMPA, GUIA_TEMPO,
-    GUIA_DESCANSOS, ESCALA_RPE, ESCALA_BORG, GUIA_CARDIO
+    GUIA_DESCANSOS, ESCALA_RPE, ESCALA_BORG, GUIA_CARDIO, TABLA_ZONAS_FCM
+)
 )
 
 # --- IA ---
@@ -1807,8 +1808,8 @@ elif menu == "📈 Progreso":
 # 📚 GUÍAS
 # =====================================================
 elif menu == "📚 Guías":
-    t1,t2,t3,t4,t5 = st.tabs(["Fuerza (Badillo)","Planif. (Bompa)",
-                                "Tempo & Pausa","RPE & Borg","Zonas Cardio"])
+    t1,t2,t3,t4,t5,t6 = st.tabs(["Fuerza (Badillo)","Planif. (Bompa)",
+                                "Tempo & Pausa","RPE & Borg","Zonas VAM", "Zonas FCM"])
     with t1: st.table(TABLA_BADILLO)
     with t2: st.table(GUIAS_BOMPA)
     with t3:
@@ -1817,6 +1818,9 @@ elif menu == "📚 Guías":
         c1,c2 = st.columns(2); c1.table(ESCALA_RPE); c2.table(ESCALA_BORG)
     with t5:
         st.table(GUIA_CARDIO)
+    with t6:
+        st.info("💡 **Nota:** Trabajar en la Zona 2 (60-70%) es ideal para maximizar la oxidación de grasas durante el ejercicio continuo.")
+        st.table(TABLA_ZONAS_FCM)
 
 # =====================================================
 # 📝 NOTAS
