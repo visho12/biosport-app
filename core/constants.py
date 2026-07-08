@@ -63,3 +63,26 @@ GUIA_CARDIO = pd.DataFrame({
     "% VAM":["<60%","60-75%","75-90%","95-105%",">110%"],
     "Sensación":["Muy fácil","Fácil","Duro","Muy duro","Agonía"],
 })
+TABLA_ZONAS_FCM = pd.DataFrame({
+    "Zona": [
+        "Z1 - Recuperación", 
+        "Z2 - Oxidación de Grasa", 
+        "Z3 - Aeróbica", 
+        "Z4 - Umbral Anaeróbico", 
+        "Z5 - VO2 Máx"
+    ],
+    "% FCM": [
+        "50 - 60%", 
+        "60 - 70%", 
+        "70 - 80%", 
+        "80 - 90%", 
+        "90 - 100%"
+    ],
+    "Beneficio Principal": [
+        "Recuperación activa y calentamiento", 
+        "Mayor % de uso de grasa como energía (Lipólisis)", 
+        "Mejora la resistencia cardiovascular y capacidad pulmonar", 
+        "Tolerancia al lactato (mejora umbral)", 
+        "Desarrollo de potencia y velocidad máxima"
+    ]
+})
