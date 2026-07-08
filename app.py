@@ -1111,7 +1111,7 @@ elif menu == "🧠 Plan Semanal":
                     grp = st.session_state.get(f"sel_grupo_{c}_{dia}", "Descanso")
                     nf_pdf[dia] = grp
                     nd_pdf[dia] = st.session_state.detalles_planes.get(c, {}).get(dia, "")
-                pb = pdf_plan(c, nf_pdf, nd_pdf)
+                pb = pdf_plan(c, nf_pdf, nd_pdf, DIAS)
                 if pb:
                     st.download_button("📄 Descargar PDF", data=pb,
                         file_name=f"Rutina_{c.replace(' ', '_')}.pdf",
