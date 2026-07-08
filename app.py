@@ -15,6 +15,10 @@ from core.constants import (
     GUIA_DESCANSOS, ESCALA_RPE, ESCALA_BORG, GUIA_CARDIO, TABLA_ZONAS_FCM
 )
 from database.sheets_db import URL_SHEET, _gs_client, cargar_datos, guardar_datos, registrar_auditoria
+from core.auth import (
+    login, registrar_usuario_sistema, eliminar_usuario_sistema, 
+    cambiar_password_usuario, cargar_usuarios_sistema
+)
 # --- IA ---
 import google.generativeai as genai
 try:
