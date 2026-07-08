@@ -7,14 +7,13 @@ import pandas as pd
 import math, time, json, io, hashlib, gspread
 from google.oauth2.service_account import Credentials
 from datetime import date, datetime, timedelta
+
 from domain.calculators import calc_1rm, calc_durnin, eval_grasa, calc_tmb, calc_get
 from core.constants import (
     VIDEOS_BASE, OBJETIVOS, TIPOS_CARDIO, TIPOS_TEST, DIAS, GRUPOS,
     TIPOS_MICROCICLO, TABLA_BADILLO, GUIAS_BOMPA, GUIA_TEMPO,
     GUIA_DESCANSOS, ESCALA_RPE, ESCALA_BORG, GUIA_CARDIO, TABLA_ZONAS_FCM
 )
-)
-
 # --- IA ---
 import google.generativeai as genai
 try:
