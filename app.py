@@ -1537,7 +1537,7 @@ elif menu == "📈 Progreso":
         st.caption(f"{len(dfl)} registros")
 
         if OPENPYXL_OK:
-            xb = excel_historial(c)
+            xb = excel_historial(c, st.session_state.historial_global)
             if xb:
                 st.download_button("📊 Exportar Excel", data=xb,
                     file_name=f"Historial_{c.replace(' ','_')}.xlsx",
