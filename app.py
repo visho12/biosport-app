@@ -1139,7 +1139,7 @@ elif menu == "📆 Mesociclo IA":
     if st.button("🚀 Generar Mesociclo con Dante", type="primary", key="btn_generar_meso"):
         if modelo_dante:
             with st.spinner(f"Dante diseñando {sem} semanas..."):
-                txt = dante_mesociclo(c, obj_m, sem)
+                txt = dante_mesociclo(c, obj_m, sem, st.session_state.db_clientes)
                 if txt:
                     nuevo = {"fecha":fstr(date.today()),
                              "objetivo":obj_m,"semanas":sem,"contenido":txt}
