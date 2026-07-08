@@ -19,7 +19,10 @@ from core.auth import (
     login, registrar_usuario_sistema, eliminar_usuario_sistema, 
     cambiar_password_usuario, cargar_usuarios_sistema
 )
-
+from services.generators import (
+    REPORTLAB_OK, OPENPYXL_OK, modelo_dante,
+    pdf_plan, excel_historial, dante_mesociclo
+)
 # --- EXCEL ---
 try:
     import openpyxl
@@ -325,105 +328,6 @@ def importar_historial(cliente):
     st.session_state.planes_semanales[cliente] = nf
     st.session_state.detalles_planes[cliente]  = nd
     guardar_datos()
-
-# =====================================================
-# GENERADORES
-# =====================================================
-def pdf_plan(cliente, focos, detalles):
-    if not REPORTLAB_OK: return None
-    buf = io.BytesIO()
-    cv  = rl_canvas.Canvas(buf, pagesize=letter)
-    W, H = letter
-    NEON = HexColor("#39FF14"); DARK = HexColor("#1E1E1E")
-    GREY = HexColor("#2D2D2D"); BLK  = HexColor("#222222"); SUB = HexColor("#666666")
-
-    cv.setFillColor(DARK); cv.rect(0,H-85,W,85,fill=1,stroke=0)
-    cv.setFillColor(NEON);  cv.setFont("Helvetica-Bold",22)
-    cv.drawString(50,H-42,"PLAN DE ENTRENAMIENTO")
-    cv.setFont("Helvetica",13); cv.drawString(50,H-65,f"Atleta: {cliente}")
-    cv.setFont("Helvetica",8);  cv.setFillColor(HexColor("#AAAAAA"))
-    cv.drawRightString(W-50,H-42,"BIO SPORT PRO")
-    cv.drawRightString(W-50,H-56,f"Fecha: {date.today():%d/%m/%Y}")
-
-    y = H-110
-    ts = focos.get("tipo_semana","")
-    if ts:
-        cv.setFont("Helvetica-Bold",11); cv.setFillColor(NEON)
-        cv.drawString(50,y,f"Microciclo: {ts}"); y -= 22
-
-    for dia in DIAS:
-        foco = focos.get(dia,"Descanso")
-        det  = detalles.get(dia,"")
-        lns  = len(det.split("\n")) if det else 0
-        need = 50 + lns*13
-        if y - need < 45: cv.showPage(); y = H-50
-        if foco != "Descanso":
-            cv.setFillColor(GREY); cv.rect(50,y-18,W-100,22,fill=1,stroke=0)
-            cv.setFillColor(NEON); cv.setFont("Helvetica-Bold",11)
-            cv.drawString(58,y-11,f"{dia.upper()}  ·  {foco}")
-            cv.setStrokeColor(NEON); cv.setLineWidth(0.4)
-            cv.line(50,y-18,W-50,y-18); y -= 28
-            if det:
-                parts = det.split("||")
-                labels = ["Calentamiento","Desarrollo","Vuelta a la Calma"]
-                if len(parts)==3:
-                    for i,blk in enumerate(parts):
-                        if not blk.strip(): continue
-                        if y<55: cv.showPage(); y=H-50
-                        cv.setFont("Helvetica-Bold",8); cv.setFillColor(NEON)
-                        cv.drawString(62,y,f"[ {labels[i]} ]"); y-=12
-                        cv.setFont("Helvetica",9); cv.setFillColor(BLK)
-                        for ln in blk.split("\n"):
-                            if ln.strip():
-                                if y<45: cv.showPage(); y=H-50
-                                cv.drawString(70,y,f"· {ln.strip()}"); y-=12
-                        y -= 4
-                else:
-                    cv.setFont("Helvetica",9); cv.setFillColor(BLK)
-                    for ln in det.split("\n"):
-                        if ln.strip():
-                            if y<45: cv.showPage(); y=H-50
-                            cv.drawString(62,y,f"· {ln.strip()}"); y-=12
-            else:
-                cv.setFont("Helvetica-Oblique",8); cv.setFillColor(SUB)
-                cv.drawString(62,y,"(Sin detalles)"); y-=12
-            y -= 10
-        else:
-            cv.setFont("Helvetica-Oblique",8); cv.setFillColor(SUB)
-            cv.drawString(58,y-8,f"{dia}: Descanso / Recuperación"); y-=22
-
-    cv.setFont("Helvetica",7); cv.setFillColor(SUB)
-    cv.drawCentredString(W/2,22,"La constancia es la clave del éxito · Bio Sport Pro")
-    cv.save(); buf.seek(0); return buf
-
-def excel_historial(cliente):
-    if not OPENPYXL_OK: return None
-    regs = [r for r in st.session_state.historial_global if r["Cliente"]==cliente]
-    if not regs: return None
-    df  = pd.DataFrame(regs); buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as w:
-        df.to_excel(w, index=False, sheet_name="Historial")
-        ws = w.sheets["Historial"]
-        for col in ws.columns:
-            ml = max(len(str(c.value or "")) for c in col)
-            ws.column_dimensions[col[0].column_letter].width = min(ml+3,40)
-    buf.seek(0); return buf
-
-def dante_mesociclo(cliente, objetivo, semanas):
-    if not modelo_dante: return None
-    d = st.session_state.db_clientes.get(cliente,{})
-    perfil = (f"Edad:{d.get('Edad','?')}, Experiencia:{d.get('Experiencia','?')}, "
-              f"Lesiones:{d.get('Lesiones','Ninguna')}, Objetivo:{objetivo}")
-    prompt = (f"Eres Dante, experto en periodización deportiva. "
-              f"Genera un mesociclo de {semanas} semanas para:\n{perfil}\n"
-              f"Por cada semana indica: tipo (adaptación/carga/impacto/descarga), "
-              f"intensidad (%RM), volumen (series por grupo), "
-              f"ejercicios principales (3-5), RPE objetivo y nota del entrenador. "
-              f"Sé específico, práctico y estructurado.")
-    try:
-        return modelo_dante.generate_content(prompt).text
-    except Exception as e:
-        return f"Error: {e}"
 
 # =====================================================
 # INICIALIZACION SEGURA DE ESTADO
