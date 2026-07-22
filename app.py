@@ -344,6 +344,8 @@ if "datos_cargados" not in st.session_state:
     st.session_state.db_clientes        = _get("clientes",        {})
     st.session_state.historial_global   = _get("historial",       [])
     st.session_state.biblioteca_videos  = _get("videos",          VIDEOS_BASE)
+    # Esto obliga a la app a inyectar los 1,300 ejercicios nuevos
+   st.session_state.biblioteca_videos.update(VIDEOS_BASE)
     st.session_state.planes_semanales   = _get("planes",          {})
     st.session_state.detalles_planes    = _get("detalles_planes", {})
     st.session_state.notas_personales   = _get("notas",           "")
