@@ -4,7 +4,7 @@ VIDEOS_BASE = {
     "Sentadilla Goblet":  "https://www.youtube.com/watch?v=MeIiIdhvXT4",
     "Sentadilla Libre":   "https://www.youtube.com/watch?v=1OoMs3MaXI4",
     "Flexiones":          "https://www.youtube.com/watch?v=e_K0yT3t3IM",
-    "Jalón al Pecho": "https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/refs/heads/main/videos/0001-2gPfomN.gif",
+    "Abdominales": "https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/refs/heads/main/videos/0001-2gPfomN.gif",
     "Peso Muerto Rumano": "https://www.youtube.com/watch?v=JCXUYuzwNrM",
     "Plancha Abdominal":  "https://www.youtube.com/watch?v=ASdvN_XEl_c",
     "Press Banca":        "https://www.youtube.com/watch?v=VmB1G1K7v94",
