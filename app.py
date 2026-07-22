@@ -8,6 +8,7 @@ import math, time, json, io, hashlib, gspread
 from google.oauth2.service_account import Credentials
 from datetime import date, datetime, timedelta
 # === ACTUALIZAR VIDEOTECA AUTOMÁTICAMENTE ===
+from core.constants import VIDEOS_BASE
 if "biblioteca_videos" in st.session_state:
     st.session_state.biblioteca_videos.update(VIDEOS_BASE)
 # ============================================
@@ -351,7 +352,6 @@ if "datos_cargados" not in st.session_state:
     st.session_state.planes_semanales   = _get("planes",          {})
     st.session_state.detalles_planes    = _get("detalles_planes", {})
     st.session_state.notas_personales   = _get("notas",           "")
-    # Claves nuevas — si no existen en datos guardados arrancan vacíos
     st.session_state.tests_fisicos      = _get("tests",           {})
     st.session_state.mesociclos         = _get("mesociclos",      {})
     st.session_state.datos_cargados     = True
