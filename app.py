@@ -10,9 +10,9 @@ from datetime import date, datetime, timedelta
 # === ACTUALIZAR VIDEOTECA AUTOMÁTICAMENTE ===
 from core.constants import VIDEOS_BASE
 
-if "biblioteca_videos" not in st.session_state:
-    st.session_state.biblioteca_videos = {}
-
+# Forzamos a que la biblioteca use los datos nuevos en español
+if "biblioteca_videos" in st.session_state:
+    st.session_state.biblioteca_videos = VIDEOS_BASE.copy()
 # Actualizamos o cargamos directamente los 1,300 ejercicios de constants.py
 st.session_state.biblioteca_videos = VIDEOS_BASE.copy()
 
