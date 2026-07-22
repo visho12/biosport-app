@@ -719,6 +719,16 @@ elif menu == "🏋️ Modo En Vivo":
       <div class='live-title'>{ej}</div>
       <div style='color:#aaa;margin-top:8px'>Controla el movimiento · Respira</div>
     </div>""", unsafe_allow_html=True)
+    # === MOSTRAR GIF DEL EJERCICIO ===
+    nombre_base = ej.split(":")[0].strip() # Limpiamos el nombre
+    if nombre_base in st.session_state.biblioteca_videos:
+        enlace_gif = st.session_state.biblioteca_videos[nombre_base]
+        # Si el enlace es un GIF o viene de GitHub, lo dibujamos en pantalla:
+        if "githubusercontent.com" in enlace_gif or ".gif" in enlace_gif:
+            _, col_gif, _ = st.columns([1, 2, 1]) # Para centrarlo bonito
+            with col_gif:
+                st.image(enlace_gif, use_container_width=True)
+    # ==================================
 
     ca, cb, cc = st.columns(3)
     with ca:
