@@ -9,9 +9,12 @@ from google.oauth2.service_account import Credentials
 from datetime import date, datetime, timedelta
 # === ACTUALIZAR VIDEOTECA AUTOMÁTICAMENTE ===
 from core.constants import VIDEOS_BASE
-if "biblioteca_videos" in st.session_state:
-    st.session_state.biblioteca_= VIDEOS_BASE.copy()
-# ============================================
+
+if "biblioteca_videos" not in st.session_state:
+    st.session_state.biblioteca_videos = {}
+
+# Actualizamos o cargamos directamente los 1,300 ejercicios de constants.py
+st.session_state.biblioteca_videos = VIDEOS_BASE.copy()
 
 from domain.calculators import calc_1rm, calc_durnin, eval_grasa, calc_tmb, calc_get
 from core.constants import (
