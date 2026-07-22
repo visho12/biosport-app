@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 # === ACTUALIZAR VIDEOTECA AUTOMÁTICAMENTE ===
 from core.constants import VIDEOS_BASE
 if "biblioteca_videos" in st.session_state:
-    st.session_state.biblioteca_videos.update(VIDEOS_BASE)
+    st.session_state.biblioteca_= VIDEOS_BASE.copy()
 # ============================================
 
 from domain.calculators import calc_1rm, calc_durnin, eval_grasa, calc_tmb, calc_get
