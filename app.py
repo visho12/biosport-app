@@ -634,22 +634,54 @@ elif menu == "💪 Entrenamiento":
         st.caption(f"Guía: {sug['Reps']} reps · {sug['RM']} · "
                    f"Pausa: {sug['Pausa']} · RPE: {sug['RPE']}")
 
-        ej_ = st.selectbox("Ejercicio:",
-                           list(st.session_state.biblioteca_videos.keys())+["✍️ Otro..."])
-        if ej_ != "✍️ Otro...":
-            ur = ult_reg(c, ej_)
-            if ur:
-                st.info(f"💡 Último: {ur['Series']}x{ur['Reps']} @ {ur['Carga']}kg")
-                rm_ = calc_1rm(ur["Carga"], ur["Reps"])
-                st.caption(f"1RM est: {rm_:.1f}kg · 80%:{rm_*.8:.1f} · 70%:{rm_*.7:.1f}")
+# --- NUEVA SECCIÓN DE SELECCIÓN Y VISTA PREVIA ---
+        st.markdown("#### 🔎 Buscar Ejercicio")
+        
+        # 1. Filtro rápido de categorías
+        filtro = st.radio(
+            "Categoría:", 
+            ["Todos", "Barra", "Mancuerna", "Cable", "Polea", "Banda", "Sentadilla", "Salto", "Peso Corporal"], 
+            horizontal=True
+        )
 
-        nom = st.text_input("Nombre:", value="" if ej_=="✍️ Otro..." else ej_)
+        # 2. Filtrar y ordenar alfabéticamente (A-Z)
+        if filtro == "Todos":
+            lista_filtrada = list(st.session_state.biblioteca_videos.keys())
+        else:
+            lista_filtrada = [ej for ej in st.session_state.biblioteca_videos.keys() if filtro.lower() in ej.lower()]
+        
+        lista_ordenada = sorted(lista_filtrada) + ["✍️ Otro..."]
+
+        # 3. Dividir en columnas: Selección a la izquierda, GIF a la derecha
+        col_sel, col_gif = st.columns([6, 4])
+
+        with col_sel:
+            ej_ = st.selectbox("Elige el ejercicio:", lista_ordenada)
+            
+            # Historial de cargas del atleta (se mantiene tu lógica)
+            if ej_ != "✍️ Otro...":
+                ur = ult_reg(c, ej_)
+                if ur:
+                    st.info(f"💡 Último: {ur['Series']}x{ur['Reps']} @ {ur['Carga']}kg")
+                    rm_ = calc_1rm(ur["Carga"], ur["Reps"])
+                    st.caption(f"1RM est: {rm_:.1f}kg · 80%:{rm_*.8:.1f} · 70%:{rm_*.7:.1f}")
+
+        with col_gif:
+            # Mostramos el GIF en tiempo real si el ejercicio existe en la base
+            if ej_ != "✍️ Otro..." and ej_ in st.session_state.biblioteca_videos:
+                st.image(st.session_state.biblioteca_videos[ej_], use_container_width=True)
+            elif ej_ == "✍️ Otro...":
+                st.info("Sin vista previa (Ejercicio manual)")
+
+        # 4. Los parámetros de la rutina (se mantiene tu lógica intacta)
+        nom = st.text_input("Nombre en rutina:", value="" if ej_=="✍️ Otro..." else ej_)
         c1,c2,c3 = st.columns(3)
         se  = c1.number_input("Series", 1,10,4)
         re  = c2.number_input("Reps",   1,50,10)
         kg  = c3.number_input("Carga kg", 0.0, step=0.5)
         pt  = st.text_input("Pausa",  value=sug["Pausa"])
         rpe = st.slider("RPE", 1, 10, 7)
+        # --------------------------------------------------
 
         if st.button("➕ Registrar Serie", type="primary", key="btn_registrar_serie"):
             if nom.strip():
