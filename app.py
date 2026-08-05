@@ -243,7 +243,21 @@ def login():
         return False
     return True
 
-if not login(): st.stop()
+# --- NUEVO: DETECCIÓN DE LINK DIRECTO ---
+es_link_directo = False
+atleta_url = st.query_params.get("atleta", None)
+
+if atleta_url:
+    es_link_directo = True
+    # Ocultamos la barra lateral completamente para que el atleta no vea menús
+    st.markdown("""<style>[data-testid="stSidebar"] {display: none !important;} 
+                   [data-testid="collapsedControl"] {display: none !important;}</style>""", 
+                unsafe_allow_html=True)
+
+# Si NO es un link directo, pedimos contraseña normal
+if not es_link_directo:
+    if not login(): st.stop()
+# ----------------------------------------
 
 _nombre_sb = st.session_state.get("nombre_usuario", st.session_state["usuario_actual"].capitalize())
 st.sidebar.markdown(f"**{_nombre_sb}**")
@@ -252,83 +266,92 @@ if st.sidebar.button("Cerrar sesion", key="btn_cerrar_sesion"):
     st.rerun()
 
 # --- EL INTERRUPTOR MÁGICO (VISTA ENTRENADOR / ATLETA) ---
-st.sidebar.markdown("---")
-modo_app = st.sidebar.radio("Selecciona la vista:", ["Entrenador 🛠️", "Portal del Atleta 📱"], key="interruptor_magico_vista")
-st.sidebar.markdown("---")
+if es_link_directo:
+    # Si entró por link, forzamos el modo atleta y escondemos el interruptor
+    modo_app = "Portal del Atleta 📱"
+else:
+    # Si entró normal, le mostramos el interruptor en la barra lateral
+    st.sidebar.markdown("---")
+    modo_app = st.sidebar.radio("Selecciona la vista:", ["Entrenador 🛠️", "Portal del Atleta 📱"], key="interruptor_magico_vista")
+    st.sidebar.markdown("---")
 
 if modo_app == "Portal del Atleta 📱":
     st.title("📱 Portal de Entrenamiento")
-    st.markdown("*Bienvenido a Bio Sport. Selecciona tu perfil para ver tu rutina de hoy.*")
     
-    # Leemos tu base de datos real para que aparezcan tus atletas
-    if "db_clientes" in st.session_state and st.session_state.db_clientes:
-        lista_atletas = ["Seleccionar..."] + list(st.session_state.db_clientes.keys())
-        nombre_atleta = st.selectbox("Atleta:", lista_atletas)
-        
-        if nombre_atleta != "Seleccionar...":
-            st.success(f"¡Vamos con todo hoy, {nombre_atleta}! 🔥")
-            
-            # --- CONEXIÓN CON LA BASE DE DATOS REAL Y FORMULARIO ---
-            hoy_str = DIAS[date.today().weekday()]
-            foco_hoy = st.session_state.planes_semanales.get(nombre_atleta, {}).get(hoy_str, "Descanso")
-            detalles_hoy = st.session_state.detalles_planes.get(nombre_atleta, {}).get(hoy_str, "")
-            
-            if foco_hoy == "Descanso" or not detalles_hoy.strip():
-                st.info(f"🛌 Hoy ({hoy_str}) es día de descanso o no tienes rutina asignada. ¡Recupérate bien!")
-            else:
-                st.markdown(f"### 🎯 Objetivo de hoy: {foco_hoy}")
-                
-                partes = detalles_hoy.split("||")
-                desarrollo = partes[1] if len(partes) > 1 else (partes[0] if partes else "")
-                ejercicios = [linea.strip() for linea in desarrollo.split("\n") if linea.strip()]
-                
-                if not ejercicios:
-                    st.warning("El bloque principal de la rutina está vacío.")
-                else:
-                    for idx, linea_ejercicio in enumerate(ejercicios):
-                        nombre_base = linea_ejercicio.split(":")[0].strip()
-                        
-                        st.markdown("---")
-                        col_info, col_gif = st.columns([1, 1])
-                        
-                        with col_info:
-                            st.markdown(f"#### {idx + 1}. {nombre_base}")
-                            if ":" in linea_ejercicio:
-                                detalles_series = linea_ejercicio.split(":")[1].strip()
-                                st.markdown(f"**Indicaciones:** {detalles_series}")
-                            
-                        with col_gif:
-                            if nombre_base in st.session_state.biblioteca_videos:
-                                url_gif = st.session_state.biblioteca_videos[nombre_base]
-                                st.image(url_gif, use_container_width=True)
-                            else:
-                                st.info("Sin vista previa")
-                        
-                        # --- FORMULARIO INTERACTIVO PARA EL ATLETA ---
-                        with st.expander(f"✍️ Registrar series de {nombre_base}", expanded=False):
-                            c1, c2, c3, c4 = st.columns(4)
-                            s_atl = c1.number_input("Series", 1, 10, 4, key=f"s_{idx}")
-                            r_atl = c2.number_input("Reps", 1, 50, 10, key=f"r_{idx}")
-                            k_atl = c3.number_input("Kg", 0.0, step=0.5, key=f"k_{idx}")
-                            rpe_atl = c4.slider("RPE", 1, 10, 7, key=f"rpe_{idx}")
-                            
-                            if st.button(f"✅ Guardar en mi historial", key=f"btn_atl_{idx}", use_container_width=True):
-                                st.session_state.historial_global.append({
-                                    "Cliente": nombre_atleta,
-                                    "Fecha": date.today().strftime("%d/%m/%Y"),
-                                    "Ejercicio": nombre_base,
-                                    "Series": s_atl,
-                                    "Reps": r_atl,
-                                    "Carga": k_atl,
-                                    "RPE": rpe_atl,
-                                    "Tipo": "Fuerza",
-                                    "Objetivo": foco_hoy,
-                                })
-                                guardar_datos()
-                                st.success("¡Excelente! Serie registrada en tu historial. 💪")
-                    st.markdown("---")
+    # Si entró por link directo, fijamos su nombre automáticamente
+    if es_link_directo:
+        nombre_atleta = atleta_url
     else:
-        st.warning("No hay atletas registrados en el sistema.")
+        st.markdown("*Bienvenido a Bio Sport. Selecciona tu perfil para ver tu rutina de hoy.*")
+        if "db_clientes" in st.session_state and st.session_state.db_clientes:
+            lista_atletas = ["Seleccionar..."] + list(st.session_state.db_clientes.keys())
+            nombre_atleta = st.selectbox("Atleta:", lista_atletas)
+        else:
+            nombre_atleta = "Seleccionar..."
+            st.warning("No hay atletas registrados en el sistema.")
+    
+    if nombre_atleta and nombre_atleta != "Seleccionar...":
+        st.success(f"¡Vamos con todo hoy, {nombre_atleta}! 🔥")
+        
+        # --- CONEXIÓN CON LA BASE DE DATOS REAL Y FORMULARIO ---
+        hoy_str = DIAS[date.today().weekday()]
+        foco_hoy = st.session_state.planes_semanales.get(nombre_atleta, {}).get(hoy_str, "Descanso")
+        detalles_hoy = st.session_state.detalles_planes.get(nombre_atleta, {}).get(hoy_str, "")
+        
+        if foco_hoy == "Descanso" or not detalles_hoy.strip():
+            st.info(f"🛌 Hoy ({hoy_str}) es día de descanso o no tienes rutina asignada. ¡Recupérate bien!")
+        else:
+            st.markdown(f"### 🎯 Objetivo de hoy: {foco_hoy}")
+            
+            partes = detalles_hoy.split("||")
+            desarrollo = partes[1] if len(partes) > 1 else (partes[0] if partes else "")
+            ejercicios = [linea.strip() for linea in desarrollo.split("\n") if linea.strip()]
+            
+            if not ejercicios:
+                st.warning("El bloque principal de la rutina está vacío.")
+            else:
+                for idx, linea_ejercicio in enumerate(ejercicios):
+                    nombre_base = linea_ejercicio.split(":")[0].strip()
+                    
+                    st.markdown("---")
+                    col_info, col_gif = st.columns([1, 1])
+                    
+                    with col_info:
+                        st.markdown(f"#### {idx + 1}. {nombre_base}")
+                        if ":" in linea_ejercicio:
+                            detalles_series = linea_ejercicio.split(":")[1].strip()
+                            st.markdown(f"**Indicaciones:** {detalles_series}")
+                        
+                    with col_gif:
+                        if nombre_base in st.session_state.biblioteca_videos:
+                            url_gif = st.session_state.biblioteca_videos[nombre_base]
+                            st.image(url_gif, use_container_width=True)
+                        else:
+                            st.info("Sin vista previa")
+                    
+                    # --- FORMULARIO INTERACTIVO PARA EL ATLETA ---
+                    with st.expander(f"✍️ Registrar series de {nombre_base}", expanded=False):
+                        c1, c2, c3, c4 = st.columns(4)
+                        s_atl = c1.number_input("Series", 1, 10, 4, key=f"s_{idx}")
+                        r_atl = c2.number_input("Reps", 1, 50, 10, key=f"r_{idx}")
+                        k_atl = c3.number_input("Kg", 0.0, step=0.5, key=f"k_{idx}")
+                        rpe_atl = c4.slider("RPE", 1, 10, 7, key=f"rpe_{idx}")
+                        
+                        if st.button(f"✅ Guardar en mi historial", key=f"btn_atl_{idx}", use_container_width=True):
+                            st.session_state.historial_global.append({
+                                "Cliente": nombre_atleta,
+                                "Fecha": date.today().strftime("%d/%m/%Y"),
+                                "Ejercicio": nombre_base,
+                                "Series": s_atl,
+                                "Reps": r_atl,
+                                "Carga": k_atl,
+                                "RPE": rpe_atl,
+                                "Tipo": "Fuerza",
+                                "Objetivo": foco_hoy,
+                            })
+                            guardar_datos()
+                            st.success("¡Excelente! Serie registrada en tu historial. 💪")
+                st.markdown("---")
 
     # MAGIA: Detenemos la ejecución aquí. El código de abajo (Entrenador) NO se leerá.
     st.stop()
