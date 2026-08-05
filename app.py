@@ -7,6 +7,8 @@ import pandas as pd
 import math, time, json, io, hashlib, gspread
 from google.oauth2.service_account import Credentials
 from datetime import date, datetime, timedelta
+import streamlit as st
+# (Aquí están tus otras importaciones como json, pandas, etc.)
 # === ACTUALIZAR VIDEOTECA AUTOMÁTICAMENTE ===
 from core.constants import VIDEOS_BASE
 
@@ -248,7 +250,43 @@ st.sidebar.markdown(f"**{_nombre_sb}**")
 if st.sidebar.button("Cerrar sesion", key="btn_cerrar_sesion"):
     for k in list(st.session_state): del st.session_state[k]
     st.rerun()
+# --- EL INTERRUPTOR MÁGICO (VISTA ENTRENADOR / ATLETA) ---
+st.sidebar.markdown("---")
+modo_app = st.sidebar.radio("Selecciona la vista:", ["Entrenador 🛠️", "Portal del Atleta 📱"])
+st.sidebar.markdown("---")
 
+if modo_app == "Portal del Atleta 📱":
+    st.title("📱 Portal de Entrenamiento")
+    st.markdown("*Bienvenido a Bio Sport. Selecciona tu perfil para ver tu rutina de hoy.*")
+    
+    # Leemos tu base de datos real para que aparezcan tus atletas
+    if "db_clientes" in st.session_state and st.session_state.db_clientes:
+        lista_atletas = ["Seleccionar..."] + list(st.session_state.db_clientes.keys())
+        nombre_atleta = st.selectbox("Atleta:", lista_atletas)
+        
+        if nombre_atleta != "Seleccionar...":
+            st.success(f"¡Vamos con todo hoy, {nombre_atleta}! 🔥")
+            st.markdown("### Tu Rutina:")
+            
+            # --- Diseño de prueba del Portal ---
+            st.markdown("---")
+            col_info, col_gif = st.columns([1, 1])
+            
+            with col_info:
+                st.markdown("#### 1. Sentadilla Completa Smith")
+                st.markdown("**Series:** 4 | **Reps:** 10")
+                st.markdown("**Carga objetivo:** 60 kg | **Pausa:** 1:30 min")
+                
+            with col_gif:
+                st.image("https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/videos/3281-NNoHCEA.gif", use_container_width=True)
+            st.markdown("---")
+            # ----------------------------------
+    else:
+        st.warning("No hay atletas registrados en el sistema.")
+
+    # MAGIA: Detenemos la ejecución aquí. El código de abajo (Entrenador) NO se leerá.
+    st.stop()
+# ---------------------------------------------------------
 # =====================================================
 # CALCULOS
 # =====================================================
