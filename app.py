@@ -1276,6 +1276,23 @@ elif menu == "🧠 Plan Semanal":
                 st.error(f"Error PDF: {e}")
         else:
             st.caption("pip install reportlab para PDF")
+            # --- NUEVO: GENERADOR DE LINK PERMANENTE ---
+    st.divider()
+    st.markdown(f"### 🔗 Enlace Permanente para {c}")
+    st.info("📲 **¡Copia y envía este link por WhatsApp!** Es 100% reutilizable. El atleta solo debe guardarlo; la aplicación actualizará su rutina automáticamente cada día.")
+    
+    # Formateamos el nombre para que sea seguro en internet (ej: "Luis Perez" -> "Luis%20Perez")
+    import urllib.parse
+    nombre_formateado = urllib.parse.quote(c)
+    
+    # ⚠️ REEMPLAZA ESTO CON EL LINK REAL DE TU APP EN STREAMLIT CLOUD
+    url_base_de_tu_app = "https://biosport.streamlit.app" 
+    
+    link_final = f"{url_base_de_tu_app}/?atleta={nombre_formateado}"
+    
+    # Mostramos el link en un cuadro fácil de copiar
+    st.code(link_final, language="http")
+    # ---------------------------------------------
 
 # =====================================================
 # 📆 MESOCICLO IA
