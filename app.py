@@ -253,7 +253,7 @@ if st.sidebar.button("Cerrar sesion", key="btn_cerrar_sesion"):
 
 # --- EL INTERRUPTOR MÁGICO (VISTA ENTRENADOR / ATLETA) ---
 st.sidebar.markdown("---")
-modo_app = st.sidebar.radio("Selecciona la vista:", ["Entrenador 🛠️", "Portal del Atleta 📱"])
+modo_app = st.sidebar.radio("Selecciona la vista:", ["Entrenador 🛠️", "Portal del Atleta 📱"], key="interruptor_magico_vista")
 st.sidebar.markdown("---")
 
 if modo_app == "Portal del Atleta 📱":
@@ -267,21 +267,66 @@ if modo_app == "Portal del Atleta 📱":
         
         if nombre_atleta != "Seleccionar...":
             st.success(f"¡Vamos con todo hoy, {nombre_atleta}! 🔥")
-            st.markdown("### Tu Rutina:")
             
-            # --- Diseño de prueba del Portal ---
-            st.markdown("---")
-            col_info, col_gif = st.columns([1, 1])
+            # --- CONEXIÓN CON LA BASE DE DATOS REAL Y FORMULARIO ---
+            hoy_str = DIAS[date.today().weekday()]
+            foco_hoy = st.session_state.planes_semanales.get(nombre_atleta, {}).get(hoy_str, "Descanso")
+            detalles_hoy = st.session_state.detalles_planes.get(nombre_atleta, {}).get(hoy_str, "")
             
-            with col_info:
-                st.markdown("#### 1. Sentadilla Completa Smith")
-                st.markdown("**Series:** 4 | **Reps:** 10")
-                st.markdown("**Carga objetivo:** 60 kg | **Pausa:** 1:30 min")
+            if foco_hoy == "Descanso" or not detalles_hoy.strip():
+                st.info(f"🛌 Hoy ({hoy_str}) es día de descanso o no tienes rutina asignada. ¡Recupérate bien!")
+            else:
+                st.markdown(f"### 🎯 Objetivo de hoy: {foco_hoy}")
                 
-            with col_gif:
-                st.image("https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/videos/3281-NNoHCEA.gif", use_container_width=True)
-            st.markdown("---")
-            # ----------------------------------
+                partes = detalles_hoy.split("||")
+                desarrollo = partes[1] if len(partes) > 1 else (partes[0] if partes else "")
+                ejercicios = [linea.strip() for linea in desarrollo.split("\n") if linea.strip()]
+                
+                if not ejercicios:
+                    st.warning("El bloque principal de la rutina está vacío.")
+                else:
+                    for idx, linea_ejercicio in enumerate(ejercicios):
+                        nombre_base = linea_ejercicio.split(":")[0].strip()
+                        
+                        st.markdown("---")
+                        col_info, col_gif = st.columns([1, 1])
+                        
+                        with col_info:
+                            st.markdown(f"#### {idx + 1}. {nombre_base}")
+                            if ":" in linea_ejercicio:
+                                detalles_series = linea_ejercicio.split(":")[1].strip()
+                                st.markdown(f"**Indicaciones:** {detalles_series}")
+                            
+                        with col_gif:
+                            if nombre_base in st.session_state.biblioteca_videos:
+                                url_gif = st.session_state.biblioteca_videos[nombre_base]
+                                st.image(url_gif, use_container_width=True)
+                            else:
+                                st.info("Sin vista previa")
+                        
+                        # --- FORMULARIO INTERACTIVO PARA EL ATLETA ---
+                        with st.expander(f"✍️ Registrar series de {nombre_base}", expanded=False):
+                            c1, c2, c3, c4 = st.columns(4)
+                            s_atl = c1.number_input("Series", 1, 10, 4, key=f"s_{idx}")
+                            r_atl = c2.number_input("Reps", 1, 50, 10, key=f"r_{idx}")
+                            k_atl = c3.number_input("Kg", 0.0, step=0.5, key=f"k_{idx}")
+                            rpe_atl = c4.slider("RPE", 1, 10, 7, key=f"rpe_{idx}")
+                            
+                            if st.button(f"✅ Guardar en mi historial", key=f"btn_atl_{idx}", use_container_width=True):
+                                st.session_state.historial_global.append({
+                                    "Cliente": nombre_atleta,
+                                    "Fecha": date.today().strftime("%d/%m/%Y"),
+                                    "Ejercicio": nombre_base,
+                                    "Series": s_atl,
+                                    "Reps": r_atl,
+                                    "Carga": k_atl,
+                                    "RPE": rpe_atl,
+                                    "Tipo": "Fuerza",
+                                    "Objetivo": foco_hoy,
+                                })
+                                guardar_datos()
+                                st.success("¡Excelente! Serie registrada en tu historial. 💪")
+                    st.markdown("---")
     else:
         st.warning("No hay atletas registrados en el sistema.")
 
