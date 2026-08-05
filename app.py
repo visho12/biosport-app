@@ -312,9 +312,6 @@ if modo_app == "Portal del Atleta 📱":
             
     else:
         st.warning("No hay atletas registrados en el sistema.")
-
-    # MAGIA: Detenemos la ejecución aquí
-    st.stop()
 # ---------------------------------------------------------
 # --- EL INTERRUPTOR MÁGICO (VISTA ENTRENADOR / ATLETA) ---
 st.sidebar.markdown("---")
