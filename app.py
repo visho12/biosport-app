@@ -250,69 +250,7 @@ st.sidebar.markdown(f"**{_nombre_sb}**")
 if st.sidebar.button("Cerrar sesion", key="btn_cerrar_sesion"):
     for k in list(st.session_state): del st.session_state[k]
     st.rerun()
-    # --- EL INTERRUPTOR MÁGICO (VISTA ENTRENADOR / ATLETA) ---
-st.sidebar.markdown("---")
-modo_app = st.sidebar.radio("Selecciona la vista:", ["Entrenador 🛠️", "Portal del Atleta 📱"])
-st.sidebar.markdown("---")
 
-if modo_app == "Portal del Atleta 📱":
-    st.title("📱 Portal de Entrenamiento")
-    st.markdown("*Bienvenido a Bio Sport. Selecciona tu perfil para ver tu rutina de hoy.*")
-    
-    # Leemos tu base de datos real para que aparezcan tus atletas
-    if "db_clientes" in st.session_state and st.session_state.db_clientes:
-        lista_atletas = ["Seleccionar..."] + list(st.session_state.db_clientes.keys())
-        nombre_atleta = st.selectbox("Atleta:", lista_atletas)
-        
-        if nombre_atleta != "Seleccionar...":
-            st.success(f"¡Vamos con todo hoy, {nombre_atleta}! 🔥")
-            
-            # --- CONEXIÓN CON LA BASE DE DATOS REAL ---
-            # 1. Obtener el día actual automáticamente (ej: "Lunes")
-            hoy_str = DIAS[date.today().weekday()]
-            
-            # 2. Buscar si el atleta tiene rutina hoy
-            foco_hoy = st.session_state.planes_semanales.get(nombre_atleta, {}).get(hoy_str, "Descanso")
-            detalles_hoy = st.session_state.detalles_planes.get(nombre_atleta, {}).get(hoy_str, "")
-            
-            if foco_hoy == "Descanso" or not detalles_hoy.strip():
-                st.info(f"🛌 Hoy ({hoy_str}) es día de descanso o no tienes rutina asignada. ¡Recupérate bien!")
-            else:
-                st.markdown(f"### 🎯 Objetivo de hoy: {foco_hoy}")
-                
-                # 3. Separar: Calentamiento || Desarrollo || Vuelta a la calma
-                partes = detalles_hoy.split("||")
-                desarrollo = partes[1] if len(partes) > 1 else (partes[0] if partes else "")
-                
-                # Sacamos cada línea que no esté vacía
-                ejercicios = [linea.strip() for linea in desarrollo.split("\n") if linea.strip()]
-                
-                if not ejercicios:
-                    st.warning("El bloque principal de la rutina está vacío.")
-                else:
-                    for idx, linea_ejercicio in enumerate(ejercicios):
-                        nombre_base = linea_ejercicio.split(":")[0].strip()
-                        
-                        st.markdown("---")
-                        col_info, col_gif = st.columns([1, 1])
-                        
-                        with col_info:
-                            st.markdown(f"#### {idx + 1}. {nombre_base}")
-                            if ":" in linea_ejercicio:
-                                detalles_series = linea_ejercicio.split(":")[1].strip()
-                                st.markdown(f"**Indicaciones:** {detalles_series}")
-                            
-                        with col_gif:
-                            if nombre_base in st.session_state.biblioteca_videos:
-                                url_gif = st.session_state.biblioteca_videos[nombre_base]
-                                st.image(url_gif, use_container_width=True)
-                            else:
-                                st.info("Sin vista previa")
-                    st.markdown("---")
-            
-    else:
-        st.warning("No hay atletas registrados en el sistema.")
-# ---------------------------------------------------------
 # --- EL INTERRUPTOR MÁGICO (VISTA ENTRENADOR / ATLETA) ---
 st.sidebar.markdown("---")
 modo_app = st.sidebar.radio("Selecciona la vista:", ["Entrenador 🛠️", "Portal del Atleta 📱"])
