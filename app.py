@@ -296,7 +296,10 @@ if modo_app == "Portal del Atleta 📱":
         st.success(f"¡Vamos con todo hoy, {nombre_atleta}! 🔥")
         
         # --- CONEXIÓN CON LA BASE DE DATOS REAL Y FORMULARIO ---
-        hoy_str = DIAS[date.today().weekday()]
+       # Calculamos la hora exacta en Chile
+        zona_chile = pytz.timezone('America/Santiago')
+        fecha_chile = datetime.now(zona_chile).date()
+        hoy_str = DIAS[fecha_chile.weekday()]
         foco_hoy = st.session_state.get("planes_semanales", {}).get(nombre_atleta, {}).get(hoy_str, "Descanso")
         detalles_hoy = st.session_state.get("detalles_planes", {}).get(nombre_atleta, {}).get(hoy_str, "")
         
