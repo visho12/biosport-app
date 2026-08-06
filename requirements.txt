@@ -6,3 +6,4 @@ google-generativeai
 reportlab
 pandas
 openpyxl
+pytz
