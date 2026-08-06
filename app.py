@@ -1291,7 +1291,7 @@ elif menu == "🧠 Plan Semanal":
     nombre_formateado = urllib.parse.quote(c)
     
     # ⚠️ REEMPLAZA ESTO CON EL LINK REAL DE TU APP EN STREAMLIT CLOUD
-    url_base_de_tu_app = "https://biosport.streamlit.app" 
+    url_base_de_tu_app = "https://biosport-app-skvkkvdkaojtifgiaavzob.streamlit.app" 
     
     link_final = f"{url_base_de_tu_app}/?atleta={nombre_formateado}"
     
