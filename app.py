@@ -282,13 +282,20 @@ if modo_app == "Portal del Atleta 📱":
     
     # Si entró por link directo, fijamos su nombre automáticamente
     if es_link_directo:
-    nombre_atleta = atleta_url
-    if "db_clientes" in st.session_state:
-        for nombre_real in st.session_state.db_clientes.keys():
-            if nombre_real.lower() == atleta_url.lower():
-                nombre_atleta = nombre_real
-                break
-else:
+        nombre_atleta = atleta_url
+        if "db_clientes" in st.session_state:
+            for nombre_real in st.session_state.db_clientes.keys():
+                if nombre_real.lower() == atleta_url.lower():
+                    nombre_atleta = nombre_real
+                    break
+    else:
+        st.markdown("*Bienvenido a Bio Sport. Selecciona tu perfil para ver tu rutina de hoy.*")
+        if "db_clientes" in st.session_state and st.session_state.db_clientes:
+            lista_atletas = ["Seleccionar..."] + list(st.session_state.db_clientes.keys())
+            nombre_atleta = st.selectbox("Atleta:", lista_atletas)
+        else:
+            nombre_atleta = "Seleccionar..."
+            st.warning("No hay atletas registrados en el sistema.")
         st.markdown("*Bienvenido a Bio Sport. Selecciona tu perfil para ver tu rutina de hoy.*")
         if "db_clientes" in st.session_state and st.session_state.db_clientes:
             lista_atletas = ["Seleccionar..."] + list(st.session_state.db_clientes.keys())
