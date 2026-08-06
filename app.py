@@ -1306,11 +1306,11 @@ elif menu == "🧠 Plan Semanal":
     import urllib.parse
     nombre_formateado = urllib.parse.quote(c)
     
-    # ⚠️ REEMPLAZA ESTO CON EL LINK REAL DE TU APP EN STREAMLIT CLOUD
+   # ⚠️ REEMPLAZA ESTO CON EL LINK REAL DE TU APP EN STREAMLIT CLOUD
     url_base_de_tu_app = "https://biosport-app-skvkkvdkaojtifgiaavzob.streamlit.app" 
     
     entrenador_actual = st.session_state.get("usuario_actual", "visho")
-link_final = f"{url_base_de_tu_app}/?entrenador={entrenador_actual}&atleta={nombre_formateado}"
+    link_final = f"{url_base_de_tu_app}/?entrenador={entrenador_actual}&atleta={nombre_formateado}"
     
     # Mostramos el link en un cuadro fácil de copiar
     st.code(link_final, language="http")
