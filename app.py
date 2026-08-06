@@ -296,7 +296,7 @@ if modo_app == "Portal del Atleta 📱":
         # --- CONEXIÓN CON LA BASE DE DATOS REAL Y FORMULARIO ---
         hoy_str = DIAS[date.today().weekday()]
         foco_hoy = st.session_state.get("planes_semanales", {}).get(nombre_atleta, {}).get(hoy_str, "Descanso")
-        detalles_hoy = st.session_state.detalles_planes.get(nombre_atleta, {}).get(hoy_str, "")
+        detalles_hoy = st.session_state.get("detalles_planes", {}).get(nombre_atleta, {}).get(hoy_str, "")
         
         if foco_hoy == "Descanso" or not detalles_hoy.strip():
             st.info(f"🛌 Hoy ({hoy_str}) es día de descanso o no tienes rutina asignada. ¡Recupérate bien!")
