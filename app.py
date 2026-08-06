@@ -2,6 +2,8 @@
 # BIO SPORT PRO TRAINER v3.0
 # Migracion segura — compatible con datos existentes
 # =====================================================
+import pytz
+from datetime import datetime
 import streamlit as st
 import pandas as pd
 import math, time, json, io, hashlib, gspread
