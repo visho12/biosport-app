@@ -259,7 +259,7 @@ if not es_link_directo:
     if not login(): st.stop()
 # ----------------------------------------
 
-_nombre_sb = st.session_state.get("nombre_usuario", st.session_state["usuario_actual"].capitalize())
+_nombre_sb = st.session_state.get("nombre_usuario", st.session_state.get("usuario_actual", "Atleta").capitalize())
 st.sidebar.markdown(f"**{_nombre_sb}**")
 if st.sidebar.button("Cerrar sesion", key="btn_cerrar_sesion"):
     for k in list(st.session_state): del st.session_state[k]
