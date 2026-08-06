@@ -248,6 +248,10 @@ def login():
 # --- NUEVO: DETECCIÓN DE LINK DIRECTO ---
 es_link_directo = False
 atleta_url = st.query_params.get("atleta", None)
+entrenador_url = st.query_params.get("entrenador", None)
+
+if atleta_url and entrenador_url:
+    st.session_state["usuario_actual"] = entrenador_url
 
 if atleta_url:
     es_link_directo = True
@@ -1305,7 +1309,8 @@ elif menu == "🧠 Plan Semanal":
     # ⚠️ REEMPLAZA ESTO CON EL LINK REAL DE TU APP EN STREAMLIT CLOUD
     url_base_de_tu_app = "https://biosport-app-skvkkvdkaojtifgiaavzob.streamlit.app" 
     
-    link_final = f"{url_base_de_tu_app}/?atleta={nombre_formateado}"
+    entrenador_actual = st.session_state.get("usuario_actual", "visho")
+link_final = f"{url_base_de_tu_app}/?entrenador={entrenador_actual}&atleta={nombre_formateado}"
     
     # Mostramos el link en un cuadro fácil de copiar
     st.code(link_final, language="http")
