@@ -35,6 +35,17 @@ from services.generators import (
     REPORTLAB_OK, OPENPYXL_OK, modelo_dante,
     pdf_plan, excel_historial, dante_mesociclo
 )
+# =====================================================
+# INYECCIÓN DE LA NUEVA ARQUITECTURA (v3.5)
+# =====================================================
+from domain.models import Usuario, UsuarioLinkAtleta, Cliente, RegistroSerie
+from database.repositories import BioSportRepository, ClienteRepository
+from services.cliente_service import ClienteService, PermisoDenegadoError
+
+# Instanciamos la Bóveda y el Servicio Globales
+db_repositorio = BioSportRepository()
+repo_clientes = ClienteRepository(db_repositorio)
+servicio_clientes = ClienteService(repo_clientes)
 # --- EXCEL ---
 try:
     import openpyxl
