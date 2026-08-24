@@ -295,97 +295,98 @@ else:
 if modo_app == "Portal del Atleta 📱":
     st.title("📱 Portal de Entrenamiento")
     
-    # Si entró por link directo, fijamos su nombre automáticamente
+    # 1. ¿Quién está entrando?
     if es_link_directo:
-        nombre_atleta = atleta_url
-        if "db_clientes" in st.session_state:
-            for nombre_real in st.session_state.db_clientes.keys():
-                if nombre_real.lower() == atleta_url.lower():
-                    nombre_atleta = nombre_real
-                    break
+        # Es un atleta desde WhatsApp. Creamos un usuario restringido.
+        usuario_actual = UsuarioLinkAtleta(
+            id="link_temporal", 
+            nombre_completo="Atleta Visitante", 
+            cliente_id_permitido=atleta_url
+        )
+        nombre_atleta_seleccionado = atleta_url
     else:
-        st.markdown("*Bienvenido a Bio Sport. Selecciona tu perfil para ver tu rutina de hoy.*")
-        if "db_clientes" in st.session_state and st.session_state.db_clientes:
-            lista_atletas = ["Seleccionar..."] + list(st.session_state.db_clientes.keys())
-            nombre_atleta = st.selectbox("Atleta:", lista_atletas)
-        else:
-            nombre_atleta = "Seleccionar..."
-            st.warning("No hay atletas registrados en el sistema.")
-        st.markdown("*Bienvenido a Bio Sport. Selecciona tu perfil para ver tu rutina de hoy.*")
-        if "db_clientes" in st.session_state and st.session_state.db_clientes:
-            lista_atletas = ["Seleccionar..."] + list(st.session_state.db_clientes.keys())
-            nombre_atleta = st.selectbox("Atleta:", lista_atletas)
-        else:
-            nombre_atleta = "Seleccionar..."
-            st.warning("No hay atletas registrados en el sistema.")
-    
-    if nombre_atleta and nombre_atleta != "Seleccionar...":
-        st.success(f"¡Vamos con todo hoy, {nombre_atleta}! 🔥")
+        # Es el Entrenador viéndolo desde la plataforma
+        usuario_actual = Usuario(
+            id=st.session_state.usuario_actual,
+            nombre_completo=st.session_state.nombre_usuario,
+            es_admin=st.session_state.get("es_admin", False)
+        )
+        st.markdown("*Bienvenido. Selecciona tu perfil para ver tu rutina de hoy.*")
+        # Aquí le pedimos al CHEF (servicio) la lista de atletas de este entrenador
+        mis_atletas = servicio_clientes.mis_atletas(usuario_actual)
         
-        # --- CONEXIÓN CON LA BASE DE DATOS REAL Y FORMULARIO ---
-       # Calculamos la hora exacta en Chile
-        zona_chile = pytz.timezone('America/Santiago')
-        fecha_chile = datetime.now(zona_chile).date()
-        hoy_str = DIAS[fecha_chile.weekday()]
-        foco_hoy = st.session_state.get("planes_semanales", {}).get(nombre_atleta, {}).get(hoy_str, "Descanso")
-        detalles_hoy = st.session_state.get("detalles_planes", {}).get(nombre_atleta, {}).get(hoy_str, "")
-        
-        if foco_hoy == "Descanso" or not detalles_hoy.strip():
-            st.info(f"🛌 Hoy ({hoy_str}) es día de descanso o no tienes rutina asignada. ¡Recupérate bien!")
+        if mis_atletas:
+            lista_nombres = ["Seleccionar..."] + [a.id for a in mis_atletas]
+            nombre_atleta_seleccionado = st.selectbox("Atleta:", lista_nombres, key="selector_atleta_portal")
         else:
-            st.markdown(f"### 🎯 Objetivo de hoy: {foco_hoy}")
-            
-            partes = detalles_hoy.split("||")
-            desarrollo = partes[1] if len(partes) > 1 else (partes[0] if partes else "")
-            ejercicios = [linea.strip() for linea in desarrollo.split("\n") if linea.strip()]
-            
-            if not ejercicios:
-                st.warning("El bloque principal de la rutina está vacío.")
-            else:
-                for idx, linea_ejercicio in enumerate(ejercicios):
-                    nombre_base = linea_ejercicio.split(":")[0].strip()
-                    
-                    st.markdown("---")
-                    col_info, col_gif = st.columns([1, 1])
-                    
-                    with col_info:
-                        st.markdown(f"#### {idx + 1}. {nombre_base}")
-                        if ":" in linea_ejercicio:
-                            detalles_series = linea_ejercicio.split(":")[1].strip()
-                            st.markdown(f"**Indicaciones:** {detalles_series}")
-                        
-                    with col_gif:
-                        if nombre_base in st.session_state.biblioteca_videos:
-                            url_gif = st.session_state.biblioteca_videos[nombre_base]
-                            st.image(url_gif, use_container_width=True)
-                        else:
-                            st.info("Sin vista previa")
-                    
-                    # --- FORMULARIO INTERACTIVO PARA EL ATLETA ---
-                    with st.expander(f"✍️ Registrar series de {nombre_base}", expanded=False):
-                        c1, c2, c3, c4 = st.columns(4)
-                        s_atl = c1.number_input("Series", 1, 10, 4, key=f"s_{idx}")
-                        r_atl = c2.number_input("Reps", 1, 50, 10, key=f"r_{idx}")
-                        k_atl = c3.number_input("Kg", 0.0, step=0.5, key=f"k_{idx}")
-                        rpe_atl = c4.slider("RPE", 1, 10, 7, key=f"rpe_{idx}")
-                        
-                        if st.button(f"✅ Guardar en mi historial", key=f"btn_atl_{idx}", use_container_width=True):
-                            st.session_state.historial_global.append({
-                                "Cliente": nombre_atleta,
-                                "Fecha": date.today().strftime("%d/%m/%Y"),
-                                "Ejercicio": nombre_base,
-                                "Series": s_atl,
-                                "Reps": r_atl,
-                                "Carga": k_atl,
-                                "RPE": rpe_atl,
-                                "Tipo": "Fuerza",
-                                "Objetivo": foco_hoy,
-                            })
-                            guardar_datos()
-                            st.success("¡Excelente! Serie registrada en tu historial. 💪")
-                st.markdown("---")
+            nombre_atleta_seleccionado = "Seleccionar..."
+            st.warning("No tienes atletas registrados bajo tu usuario.")
 
-    # MAGIA: Detenemos la ejecución aquí. El código de abajo (Entrenador) NO se leerá.
+    # 2. Mostrar la rutina
+    if nombre_atleta_seleccionado and nombre_atleta_seleccionado != "Seleccionar...":
+        try:
+            # Le pedimos al CHEF que nos traiga al atleta, verificando permisos
+            atleta_seguro = servicio_clientes.obtener_atleta(nombre_atleta_seleccionado, usuario_actual)
+            
+            st.success(f"¡Vamos con todo hoy, {atleta_seguro.id}! 🔥")
+            
+            zona_chile = pytz.timezone('America/Santiago')
+            fecha_chile = datetime.now(zona_chile).date()
+            hoy_str = DIAS[fecha_chile.weekday()]
+            
+            # (El resto del código del atleta queda igual, porque las variables antiguas 
+            #  aún existen en session_state por compatibilidad temporal)
+            foco_hoy = st.session_state.get("planes_semanales", {}).get(atleta_seguro.id, {}).get(hoy_str, "Descanso")
+            detalles_hoy = st.session_state.get("detalles_planes", {}).get(atleta_seguro.id, {}).get(hoy_str, "")
+            
+            if foco_hoy == "Descanso" or not detalles_hoy.strip():
+                st.info(f"🛌 Hoy ({hoy_str}) es día de descanso o no tienes rutina asignada. ¡Recupérate bien!")
+            else:
+                st.markdown(f"### 🎯 Objetivo de hoy: {foco_hoy}")
+                partes = detalles_hoy.split("||")
+                desarrollo = partes[1] if len(partes) > 1 else (partes[0] if partes else "")
+                ejercicios = [linea.strip() for linea in desarrollo.split("\n") if linea.strip()]
+                
+                if not ejercicios:
+                    st.warning("El bloque principal de la rutina está vacío.")
+                else:
+                    for idx, linea_ejercicio in enumerate(ejercicios):
+                        nombre_base = linea_ejercicio.split(":")[0].strip()
+                        st.markdown("---")
+                        col_info, col_gif = st.columns([1, 1])
+                        
+                        with col_info:
+                            st.markdown(f"#### {idx + 1}. {nombre_base}")
+                            if ":" in linea_ejercicio:
+                                st.markdown(f"**Indicaciones:** {linea_ejercicio.split(':')[1].strip()}")
+                            
+                        with col_gif:
+                            if nombre_base in st.session_state.biblioteca_videos:
+                                st.image(st.session_state.biblioteca_videos[nombre_base], use_container_width=True)
+                            else:
+                                st.info("Sin vista previa")
+                        
+                        with st.expander(f"✍️ Registrar series de {nombre_base}", expanded=False):
+                            c1, c2, c3, c4 = st.columns(4)
+                            s_atl = c1.number_input("Series", 1, 10, 4, key=f"s_{idx}")
+                            r_atl = c2.number_input("Reps", 1, 50, 10, key=f"r_{idx}")
+                            k_atl = c3.number_input("Kg", 0.0, step=0.5, key=f"k_{idx}")
+                            rpe_atl = c4.slider("RPE", 1, 10, 7, key=f"rpe_{idx}")
+                            
+                            if st.button(f"✅ Guardar en mi historial", key=f"btn_atl_{idx}", use_container_width=True):
+                                st.session_state.historial_global.append({
+                                    "Cliente": atleta_seguro.id, "Fecha": date.today().strftime("%d/%m/%Y"),
+                                    "Ejercicio": nombre_base, "Series": s_atl, "Reps": r_atl,
+                                    "Carga": k_atl, "RPE": rpe_atl, "Tipo": "Fuerza", "Objetivo": foco_hoy,
+                                })
+                                guardar_datos()
+                                st.success("¡Excelente! Serie registrada en tu historial. 💪")
+                    st.markdown("---")
+        except PermisoDenegadoError as error_seguridad:
+            # Si alguien alteró el link, cae aquí:
+            st.error("⛔ Acceso Denegado.")
+            st.warning(str(error_seguridad))
+            
     st.stop()
 # ---------------------------------------------------------
 # =====================================================
