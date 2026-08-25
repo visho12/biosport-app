@@ -321,7 +321,7 @@ if modo_app == "Portal del Atleta 📱":
             nombre_atleta_seleccionado = "Seleccionar..."
             st.warning("No tienes atletas registrados bajo tu usuario.")
 
-    # 2. Mostrar la rutina
+   # 2. Mostrar la rutina
     if nombre_atleta_seleccionado and nombre_atleta_seleccionado != "Seleccionar...":
         try:
             # Le pedimos al CHEF que nos traiga al atleta, verificando permisos
@@ -333,10 +333,16 @@ if modo_app == "Portal del Atleta 📱":
             fecha_chile = datetime.now(zona_chile).date()
             hoy_str = DIAS[fecha_chile.weekday()]
             
-            # (El resto del código del atleta queda igual, porque las variables antiguas 
-            #  aún existen en session_state por compatibilidad temporal)
-            foco_hoy = st.session_state.get("planes_semanales", {}).get(atleta_seguro.id, {}).get(hoy_str, "Descanso")
-            detalles_hoy = st.session_state.get("detalles_planes", {}).get(atleta_seguro.id, {}).get(hoy_str, "")
+            # ========================================================
+            # LA CLAVE: Sacamos la rutina DIRECTO de la Bóveda de visho
+            # ignorando por completo las memorias antiguas con errores
+            # ========================================================
+            datos_frescos = db_repositorio.leer_datos(usuario_actual.id)
+            planes = datos_frescos.get("planes", {})
+            detalles = datos_frescos.get("detalles_planes", {})
+            
+            foco_hoy = planes.get(atleta_seguro.id, {}).get(hoy_str, "Descanso")
+            detalles_hoy = detalles.get(atleta_seguro.id, {}).get(hoy_str, "")
             
             if foco_hoy == "Descanso" or not detalles_hoy.strip():
                 st.info(f"🛌 Hoy ({hoy_str}) es día de descanso o no tienes rutina asignada. ¡Recupérate bien!")
@@ -373,12 +379,22 @@ if modo_app == "Portal del Atleta 📱":
                             rpe_atl = c4.slider("RPE", 1, 10, 7, key=f"rpe_{idx}")
                             
                             if st.button(f"✅ Guardar en mi historial", key=f"btn_atl_{idx}", use_container_width=True):
-                                st.session_state.historial_global.append({
-                                    "Cliente": atleta_seguro.id, "Fecha": date.today().strftime("%d/%m/%Y"),
-                                    "Ejercicio": nombre_base, "Series": s_atl, "Reps": r_atl,
-                                    "Carga": k_atl, "RPE": rpe_atl, "Tipo": "Fuerza", "Objetivo": foco_hoy,
+                                # ========================================================
+                                # LA CLAVE 2: Guardamos el progreso DIRECTO en la Bóveda
+                                # ========================================================
+                                datos_guardar = db_repositorio.leer_datos(usuario_actual.id)
+                                hist = datos_guardar.get("historial", [])
+                                hist.append({
+                                    "Cliente": atleta_seguro.id, 
+                                    "Fecha": date.today().strftime("%d/%m/%Y"),
+                                    "Ejercicio": nombre_base, 
+                                    "Series": s_atl, "Reps": r_atl,
+                                    "Carga": k_atl, "RPE": rpe_atl, 
+                                    "Tipo": "Fuerza", "Objetivo": foco_hoy,
                                 })
-                                guardar_datos()
+                                datos_guardar["historial"] = hist
+                                db_repositorio.guardar_datos(usuario_actual.id, datos_guardar)
+                                
                                 st.success("¡Excelente! Serie registrada en tu historial. 💪")
                     st.markdown("---")
         except PermisoDenegadoError as error_seguridad:
