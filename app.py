@@ -42,10 +42,17 @@ from domain.models import Usuario, UsuarioLinkAtleta, Cliente, RegistroSerie
 from database.repositories import BioSportRepository, ClienteRepository
 from services.cliente_service import ClienteService, PermisoDenegadoError
 
-# Instanciamos la Bóveda y el Servicio Globales
-db_repositorio = BioSportRepository()
-repo_clientes = ClienteRepository(db_repositorio)
-servicio_clientes = ClienteService(repo_clientes)
+# =====================================================
+# CACHÉ: Abrimos la Bóveda solo 1 vez para no saturar a Google
+# =====================================================
+@st.cache_resource
+def iniciar_boveda_y_servicios():
+    db = BioSportRepository()
+    repo = ClienteRepository(db)
+    servicio = ClienteService(repo)
+    return db, repo, servicio
+
+db_repositorio, repo_clientes, servicio_clientes = iniciar_boveda_y_servicios()
 # --- EXCEL ---
 try:
     import openpyxl
