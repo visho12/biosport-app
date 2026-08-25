@@ -295,11 +295,10 @@ else:
 if modo_app == "Portal del Atleta 📱":
     st.title("📱 Portal de Entrenamiento")
     
-    # 1. ¿Quién está entrando?
     if es_link_directo:
         # Es un atleta desde WhatsApp. Creamos un usuario restringido.
         usuario_actual = UsuarioLinkAtleta(
-            id="link_temporal", 
+            id=entrenador_url or "visho",  # <--- Ahora usa el nombre de tu link (ej. visho)
             nombre_completo="Atleta Visitante", 
             cliente_id_permitido=atleta_url
         )
