@@ -186,6 +186,14 @@ def videos_custom_desde(datos) -> dict:
 # Superusuario: visho (contraseña en st.secrets["PW_VISHO"], sin valor por defecto)
 # =====================================================
 ADMIN_USER = "visho"
+_FALTAN = [k for k in ("PW_VISHO", "LINK_SECRET") if k not in st.secrets]
+if _FALTAN:
+    st.error("⚙️ Falta configurar en Secrets: " + ", ".join(_FALTAN))
+    st.markdown("En Streamlit Cloud: **Manage app → Settings → Secrets**. Agrega:")
+    st.code('PW_VISHO = "tu-contraseña-de-admin"\nLINK_SECRET = "una-cadena-larga-y-aleatoria"',
+            language="toml")
+    st.stop()
+
 ADMIN_PASS = st.secrets["PW_VISHO"]
 
 
