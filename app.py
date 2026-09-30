@@ -1311,44 +1311,117 @@ elif menu == "🎥 Videoteca":
     st.dataframe(pd.DataFrame(list(st.session_state.biblioteca_videos.items()), columns=["Ejercicio", "Enlace"]))
 
 # =====================================================
-# 👑 PANEL ADMIN
+# 👑 PANEL ADMIN — Con gestión de bajas por no pago y anti-error 429
 # =====================================================
 elif menu == "👑 Panel Admin":
     st.title("👑 Panel de Control Bio Sport")
+    st.caption("Panel exclusivo de administración.")
+
     if st.button("🔄 Actualizar Datos de la Nube", use_container_width=True):
-        st.session_state.pop("admin_cache", None); st.rerun()
+        st.session_state.pop("admin_cache", None)
+        st.rerun()
 
     if "admin_cache" not in st.session_state:
         with st.spinner("Descargando base de datos segura..."):
-            client = _gs_client(); sheet = client.open_by_url(URL_SHEET); usr_db = cargar_usuarios_sistema()
+            client = _gs_client()
+            sheet = client.open_by_url(URL_SHEET)
+            usr_db = cargar_usuarios_sistema()
             datos_entrenadores = {}
             for usr in usr_db.keys():
                 try:
-                    ws = sheet.worksheet(usr); vals = ws.col_values(1)
-                    if vals: datos_entrenadores[usr] = json.loads("".join(vals))
-                except Exception: datos_entrenadores[usr] = {}
+                    ws = sheet.worksheet(usr)
+                    vals = ws.col_values(1)
+                    if vals:
+                        datos_entrenadores[usr] = json.loads("".join(vals))
+                except Exception:
+                    datos_entrenadores[usr] = {}
             st.session_state.admin_cache = {"usuarios": usr_db, "datos": datos_entrenadores}
 
     cache = st.session_state.admin_cache
-    usuarios_db = cache["usuarios"]; datos_completos = cache["datos"]
+    usuarios_db = cache["usuarios"]
+    datos_completos = cache["datos"]
 
     tab_usuarios, tab_cobros, tab_ranking = st.tabs(["👥 Preparadores", "💰 Cobros", "🏆 Ranking"])
+
     with tab_usuarios:
-        st.subheader("Preparadores")
+        st.subheader("Preparadores Activos")
         if usuarios_db:
-            st.dataframe(pd.DataFrame([{"Usuario": u, "Nombre": i.get("nombre_completo", "—"), "Cobro": i.get("tipo_cobro")} for u, i in usuarios_db.items()]))
+            st.dataframe(
+                pd.DataFrame([
+                    {
+                        "Usuario": u,
+                        "Nombre": i.get("nombre_completo", "—"),
+                        "Modalidad": "Por alumno" if i.get("tipo_cobro") == "por_alumno" else "Cuota fija",
+                        "Valor ($)": f"${int(i.get('valor_cobro', 0)):,}",
+                        "Fecha Registro": i.get("fecha_registro", "—")
+                    } 
+                    for u, i in usuarios_db.items()
+                ]),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No hay preparadores registrados en el sistema.")
+
+        st.divider()
+
+        # 1. AGREGAR PREPARADOR
         with st.expander("➕ Registrar nuevo preparador"):
-            un = st.text_input("Usuario (sin espacios):")
-            pn = st.text_input("Contraseña:", type="password")
-            nn = st.text_input("Nombre completo:")
-            tc = st.selectbox("Modalidad:", ["por_alumno", "fijo_mensual"])
-            vc = st.number_input("Valor ($):", value=2500)
-            if st.button("Crear cuenta", type="primary"):
+            un = st.text_input("Usuario (sin espacios ni mayúsculas):", key="admin_add_u").lower().strip()
+            pn = st.text_input("Contraseña inicial:", type="password", key="admin_add_p")
+            nn = st.text_input("Nombre completo:", key="admin_add_n")
+            tc = st.selectbox("Modalidad de cobro:", ["por_alumno", "fijo_mensual"], format_func=lambda x: "Por alumno activo" if x=="por_alumno" else "Cuota fija mensual", key="admin_add_tc")
+            vc = st.number_input("Valor acordado ($):", value=2500, step=500, key="admin_add_vc")
+            if st.button("Crear cuenta de preparador", type="primary", key="btn_admin_add"):
                 ok, msg = registrar_usuario_sistema(un, pn, nn, tc, vc)
                 if ok: 
-                    st.success("Registrado correctamente"); st.session_state.pop("admin_cache", None); st.rerun()
+                    st.success(f"Cuenta de {un} creada con éxito.")
+                    st.session_state.pop("admin_cache", None)
+                    time.sleep(0.8)
+                    st.rerun()
                 else: 
-                    st.error(msg)
+                    st.error(f"Error: {msg}")
+
+        # 2. CAMBIAR CONTRASEÑA
+        with st.expander("🔑 Cambiar contraseña de preparador"):
+            if usuarios_db:
+                cp1, cp2 = st.columns(2)
+                usr_cp = cp1.selectbox("Selecciona preparador:", list(usuarios_db.keys()), key="admin_cp_u")
+                new_pw = cp2.text_input("Nueva contraseña:", type="password", key="admin_cp_p")
+                if st.button("Actualizar Contraseña", key="btn_admin_cp"):
+                    if len(new_pw) < 6:
+                        st.error("La contraseña debe tener mínimo 6 caracteres.")
+                    else:
+                        if cambiar_password_usuario(usr_cp, new_pw):
+                            st.success(f"Contraseña de '{usr_cp}' actualizada.")
+                            st.session_state.pop("admin_cache", None)
+                            time.sleep(0.8)
+                            st.rerun()
+                        else:
+                            st.error("No se pudo actualizar la contraseña en Google Sheets.")
+            else:
+                st.info("Sin preparadores para modificar.")
+
+        # 3. DAR DE BAJA / ELIMINAR POR NO PAGO
+        with st.expander("🗑️ Dar de baja / Eliminar acceso por no pago"):
+            if usuarios_db:
+                st.warning("⚠️ **¿Un preparador no pagó la mensualidad?** Al darlo de baja aquí, se eliminará su usuario de la hoja `usuarios_sistema`, impidiéndole iniciar sesión de inmediato. Los datos de sus atletas no se destruyen en Google Sheets, por si regulariza su pago más adelante.")
+                usr_baja = st.selectbox("Selecciona preparador a revocar:", list(usuarios_db.keys()), key="admin_del_u")
+                confirmar_baja = st.checkbox(f"Confirmo que deseo quitar el acceso inmediatamente a '{usr_baja}'", key="admin_del_confirm")
+                
+                if st.button(f"🚫 Revocar Acceso a {usr_baja}", type="primary", key="btn_admin_del"):
+                    if confirmar_baja:
+                        if eliminar_usuario_sistema(usr_baja):
+                            st.success(f"Acceso de '{usr_baja}' revocado correctamente. Ya no podrá ingresar a la app.")
+                            st.session_state.pop("admin_cache", None)
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("Hubo un fallo al intentar eliminar el registro en Google Sheets.")
+                    else:
+                        st.warning("Debes marcar la casilla de confirmación para ejecutar la baja.")
+            else:
+                st.info("Sin preparadores registrados.")
 
     with tab_cobros:
         st.subheader("Cobros del Mes")
@@ -1358,17 +1431,33 @@ elif menu == "👑 Panel Admin":
             tc = info.get("tipo_cobro", "por_alumno")
             vc = int(info.get("valor_cobro", 0))
             mo = n * vc if tc == "por_alumno" else vc
-            cobros.append({"Preparador": usr, "Alumnos": n, "Total": f"${mo:,}"})
+            cobros.append({
+                "Preparador": info.get("nombre_completo", usr),
+                "Usuario": usr,
+                "Alumnos Activos": n,
+                "Modalidad": "Por alumno" if tc == "por_alumno" else "Cuota fija",
+                "Total a Pagar": f"${mo:,}"
+            })
             total += mo
-        st.dataframe(pd.DataFrame(cobros))
-        st.metric("Total a Recaudar", f"${total:,}")
+
+        if cobros:
+            st.dataframe(pd.DataFrame(cobros), use_container_width=True, hide_index=True)
+            st.metric("Total General a Recaudar", f"${total:,}")
+        else:
+            st.info("No hay datos de cobros registrados.")
 
     with tab_ranking:
-        st.subheader("Ranking Actividad (30 días)")
+        st.subheader("Ranking Actividad (Últimos 30 días)")
         rank = []
         for usr, info in usuarios_db.items():
             for nom in datos_completos.get(usr, {}).get("clientes", {}):
-                r30 = [r for r in datos_completos.get(usr, {}).get("historial", []) if r.get("Cliente")==nom]
-                rank.append({"Atleta": nom, "Preparador": usr, "Sesiones": len(r30)})
+                r30 = [r for r in datos_completos.get(usr, {}).get("historial", []) if r.get("Cliente") == nom]
+                rank.append({
+                    "Atleta": nom, 
+                    "Preparador": info.get("nombre_completo", usr), 
+                    "Sesiones Registradas": len(r30)
+                })
         if rank:
-            st.dataframe(pd.DataFrame(rank).sort_values("Sesiones", ascending=False))
+            st.dataframe(pd.DataFrame(rank).sort_values("Sesiones Registradas", ascending=False), use_container_width=True, hide_index=True)
+        else:
+            st.info("Sin actividad registrada en los últimos 30 días.")
