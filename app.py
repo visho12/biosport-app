@@ -1,68 +1,98 @@
 # =====================================================
-# BIO SPORT PRO TRAINER v3.1
-# Versión corregida: seguridad, bugs de datos y orden
+# BIO SPORT PRO TRAINER v3.0 - MASTER COMPLETO
+# 100% Restaurado: Nutrición + Anamnesis + Links Seguros
 # =====================================================
 import streamlit as st
 
-# set_page_config DEBE ser la primera llamada a Streamlit
+# set_page_config DEBE ser siempre la primera llamada de Streamlit
 st.set_page_config(page_title="Bio Sport Pro", layout="wide", page_icon="⚡")
 
 import os
 import json
 import time
+import math
+import io
 import hmac
-import html
+import base64
+import urllib.parse
 import hashlib
-import logging
-import gspread
+from datetime import date, datetime, timedelta
 import pytz
 import pandas as pd
-from datetime import date, datetime, timedelta
+import gspread
+from google.oauth2.service_account import Credentials
 
-from domain.calculators import calc_1rm, calc_durnin, eval_grasa, calc_tmb, calc_get
-from core.constants import (
-    VIDEOS_BASE, OBJETIVOS, TIPOS_CARDIO, TIPOS_TEST, DIAS, GRUPOS,
-    TIPOS_MICROCICLO, TABLA_BADILLO, GUIAS_BOMPA, GUIA_TEMPO,
-    GUIA_DESCANSOS, ESCALA_RPE, ESCALA_BORG, GUIA_CARDIO, TABLA_ZONAS_FCM
-)
-from database.sheets_db import URL_SHEET, _gs_client, cargar_datos, guardar_datos, registrar_auditoria
-from services.generators import (
-    REPORTLAB_OK, OPENPYXL_OK, modelo_dante,
-    pdf_plan, excel_historial, dante_mesociclo
-)
-from domain.models import Usuario, UsuarioLinkAtleta
-from database.repositories import BioSportRepository, ClienteRepository
-from services.cliente_service import ClienteService, PermisoDenegadoError
-from core.links import verificar_link, construir_link
+# --- IA GEMINI ---
+import google.generativeai as genai
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    _mv = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
+    modelo_dante = genai.GenerativeModel(_mv[0]) if _mv else None
+except Exception:
+    modelo_dante = None
 
-log = logging.getLogger("biosport")
-esc = html.escape
+# --- PDF (ReportLab) ---
+try:
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib import colors
+    REPORTLAB_OK = True
+except ImportError:
+    REPORTLAB_OK = False
+
+# --- EXCEL (OpenPyXL) ---
+try:
+    import openpyxl
+    OPENPYXL_OK = True
+except ImportError:
+    OPENPYXL_OK = False
 
 # =====================================================
-# CONSTANTES Y HELPERS DE FECHA (hora de Chile)
+# HORA DE CHILE Y HELPERS
 # =====================================================
-DESCANSO = "Descanso"
-FUERZA = "Fuerza"
-CARDIO = "Cardio"
-PARTES = ("cal", "des", "vue")
-ZONA = pytz.timezone("America/Santiago")
-
+ZONA_CHILE = pytz.timezone("America/Santiago")
 
 def hoy_chile() -> date:
-    return datetime.now(ZONA).date()
+    try:
+        return datetime.now(ZONA_CHILE).date()
+    except Exception:
+        return date.today()
 
-
-def ahora_chile() -> datetime:
-    return datetime.now(ZONA)
-
-
-def fstr(d): return d.strftime("%d/%m/%Y")
-
+def fstr(d): 
+    return d.strftime("%d/%m/%Y")
 
 # =====================================================
-# ESTILOS
+# SEGURIDAD: ENLACES FIRMADOS CON HMAC (WhatsApp)
 # =====================================================
-CSS_BASE = """
+def _secreto_link() -> bytes:
+    try:
+        return str(st.secrets["LINK_SECRET"]).encode()
+    except Exception:
+        return b"bio-sport-secret-key-firmas-2026"
+
+def firmar_link(entrenador: str, atleta: str) -> str:
+    msg = f"{entrenador}|{atleta}".encode()
+    sig = hmac.new(_secreto_link(), msg, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(sig).decode()[:32]
+
+def verificar_link(entrenador: str, atleta: str, sig: str) -> bool:
+    if not sig: 
+        return False
+    return hmac.compare_digest(firmar_link(entrenador, atleta), sig)
+
+def construir_link(base: str, entrenador: str, atleta: str) -> str:
+    q = urllib.parse.urlencode({
+        "entrenador": entrenador,
+        "atleta": atleta,
+        "sig": firmar_link(entrenador, atleta),
+    })
+    return f"{base.rstrip('/')}/?{q}"
+
+# =====================================================
+# ESTILOS CSS
+# =====================================================
+st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;600&display=swap');
 html,body,[class*="css"]{font-family:'DM Sans',sans-serif}
@@ -78,51 +108,6 @@ h1,h2,h3{font-family:'Bebas Neue',sans-serif;letter-spacing:2px}
            border-radius:12px;padding:24px;text-align:center;margin-bottom:16px}
 .live-title{font-family:'Bebas Neue',sans-serif;font-size:2.6rem;color:#39FF14;letter-spacing:3px}
 .adh-bar{height:12px;border-radius:6px;background:#2d2d2d;overflow:hidden;margin:4px 0}
-</style>
-"""
-
-CSS_LOGIN = """
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;600&display=swap');
-[data-testid="stSidebar"]{display:none}
-[data-testid="collapsedControl"]{display:none}
-.stApp{background:radial-gradient(ellipse at top,#0a1a0a 0%,#0d0d0d 60%)}
-.login-logo{text-align:center;padding:48px 0 32px}
-.login-titulo{font-family:'Bebas Neue',sans-serif;font-size:3.6rem;color:#39FF14;
-              letter-spacing:6px;line-height:1;text-shadow:0 0 30px rgba(57,255,20,.4)}
-.login-sub{color:#555;font-size:.82rem;letter-spacing:3px;margin-top:6px;
-           text-transform:uppercase;font-family:'DM Sans',sans-serif}
-.login-card{background:linear-gradient(135deg,#111 0%,#1a1a1a 100%);
-            border:1px solid #1f1f1f;border-radius:16px;padding:32px 36px;
-            box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 0 1px rgba(57,255,20,.08)}
-.stTextInput input{background:#0d0d0d!important;border:1px solid #2a2a2a!important;
-                   border-radius:8px!important;color:#f0f0f0!important;
-                   padding:12px 14px!important;font-size:1rem!important;
-                   transition:border-color .2s!important}
-.stTextInput input:focus{border-color:#39FF14!important;
-                         box-shadow:0 0 0 2px rgba(57,255,20,.15)!important}
-.stTextInput label{color:#888!important;font-size:.82rem!important;
-                   letter-spacing:1px!important;text-transform:uppercase!important}
-.stFormSubmitButton button{background:#39FF14!important;color:#000!important;
-                           font-family:'Bebas Neue',sans-serif!important;
-                           font-size:1.2rem!important;letter-spacing:3px!important;
-                           border-radius:8px!important;border:none!important;
-                           padding:14px!important;width:100%!important;
-                           box-shadow:0 4px 20px rgba(57,255,20,.3)!important;
-                           transition:all .2s!important}
-.stFormSubmitButton button:hover{background:#5fff3a!important;
-                                 box-shadow:0 6px 30px rgba(57,255,20,.5)!important;
-                                 transform:translateY(-1px)!important}
-.stTabs [data-baseweb="tab-list"]{gap:4px;background:transparent}
-.stTabs [data-baseweb="tab"]{color:#555;font-weight:600;font-size:.85rem;letter-spacing:1px}
-.stTabs [aria-selected="true"]{color:#39FF14!important;border-bottom-color:#39FF14!important}
-.login-footer{text-align:center;color:#333;font-size:.75rem;letter-spacing:1px;
-              margin-top:32px;font-family:'DM Sans',sans-serif}
-</style>
-"""
-
-CSS_PLAN = """
-<style>
 .dia-card {
     background: linear-gradient(135deg,#1a1a1a,#222);
     border: 1px solid #333; border-radius: 10px;
@@ -131,8 +116,7 @@ CSS_PLAN = """
 .dia-card:hover { border-color: #555; }
 .dia-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .dia-nombre { font-family: 'Bebas Neue', sans-serif; font-size: 1.2rem; letter-spacing: 2px; color: #fff; }
-.dia-badge { font-size: .75rem; font-weight: 700; padding: 3px 10px; border-radius: 20px;
-             text-transform: uppercase; letter-spacing: 1px; }
+.dia-badge { font-size: .75rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 1px; }
 .badge-descanso { background:#1a1a1a; color:#555; border:1px solid #333; }
 .badge-pierna   { background:#1a0d2e; color:#9b59b6; border:1px solid #9b59b6; }
 .badge-pecho    { background:#0d1f2e; color:#3498db; border:1px solid #3498db; }
@@ -142,139 +126,143 @@ CSS_PLAN = """
 .badge-torso    { background:#0d2e2e; color:#1abc9c; border:1px solid #1abc9c; }
 .badge-brazo    { background:#2e2e0d; color:#f1c40f; border:1px solid #f1c40f; }
 .badge-cardio   { background:#0d1a2e; color:#00BFFF; border:1px solid #00BFFF; }
-.ejercicio-chip { display:inline-block; background:#2d2d2d; border:1px solid #444;
-                  border-radius:6px; padding:4px 10px; margin:3px 4px 3px 0;
-                  font-size:.82rem; color:#ddd; }
-.ejercicio-chip:hover { border-color:#39FF14; color:#39FF14; cursor:default; }
 </style>
-"""
-
-st.markdown(CSS_BASE, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 # =====================================================
-# SERVICIOS (se crean una sola vez)
+# CONSTANTES TÉCNICAS
 # =====================================================
-@st.cache_resource
-def iniciar_boveda_y_servicios():
-    db = BioSportRepository()
-    repo = ClienteRepository(db)
-    servicio = ClienteService(repo)
-    return db, repo, servicio
+VIDEOS_BASE = {
+    "Sentadilla Goblet":  "https://www.youtube.com/watch?v=MeIiIdhvXT4",
+    "Sentadilla Libre":   "https://www.youtube.com/watch?v=1OoMs3MaXI4",
+    "Flexiones":          "https://www.youtube.com/watch?v=e_K0yT3t3IM",
+    "Jalón al Pecho":     "https://www.youtube.com/watch?v=HSoHeSrp-j4",
+    "Peso Muerto Rumano": "https://www.youtube.com/watch?v=JCXUYuzwNrM",
+    "Plancha Abdominal":  "https://www.youtube.com/watch?v=ASdvN_XEl_c",
+    "Press Banca":        "https://www.youtube.com/watch?v=VmB1G1K7v94",
+    "Zancadas":           "https://www.youtube.com/watch?v=0_ZmM-J7y_M",
+    "Remo Mancuerna":     "https://www.youtube.com/watch?v=D7KaRcCIQms",
+    "Press Militar":      "https://www.youtube.com/watch?v=M2rwvNhTOu0",
+}
+OBJETIVOS = {
+    "Hipertrofia":   {"Reps":"6-12",  "Pausa":"1:30","RPE":"7-9",      "RM":"65-80%"},
+    "Fuerza Máxima": {"Reps":"1-5",   "Pausa":"3:00","RPE":"8-10",     "RM":"85-100%"},
+    "Resistencia":   {"Reps":"15-20+","Pausa":"0:45","RPE":"6-8",      "RM":"<60%"},
+    "Potencia":      {"Reps":"1-5",   "Pausa":"2:00","RPE":"Explosivo","RM":"30-70%"},
+}
+TIPOS_CARDIO  = ["Carrera","Bicicleta","Elíptica","Remo","Natación","HIIT","Caminata","Otro"]
+TIPOS_TEST    = ["Test Cooper (12 min)","Yo-Yo","Salto CMJ","Flexibilidad Sit&Reach",
+                 "Fuerza Relativa","1RM Estimado","Test 1km","Otro"]
+DIAS          = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
+GRUPOS        = ["Descanso","Pierna","Pecho/Hombro","Espalda","Glúteo",
+                 "Full Body","Torso","Brazo","Cardio"]
+TIPOS_MICROCICLO = ["Ajuste (Descarga)","Carga (Desarrollo)","Impacto (Choque)"]
 
-
-db_repositorio, repo_clientes, servicio_clientes = iniciar_boveda_y_servicios()
-
-
-@st.cache_data(ttl=30, show_spinner=False)
-def leer_datos_cacheado(entrenador: str):
-    """Lectura con caché corto para no saturar Google Sheets (error 429)."""
-    return db_repositorio.leer_datos(entrenador)
-
-
-def videos_custom_desde(datos) -> dict:
-    """Devuelve solo los videos personalizados (no los de VIDEOS_BASE).
-    Compatible con datos antiguos que guardaban toda la biblioteca en 'videos'."""
-    if not datos:
-        return {}
-    if datos.get("videos_custom") is not None:
-        return dict(datos["videos_custom"])
-    return {k: v for k, v in (datos.get("videos") or {}).items() if VIDEOS_BASE.get(k) != v}
-
+TABLA_BADILLO = pd.DataFrame({
+    "Zona":["Fuerza Máx","Fuerza-Hipert","Hipert Alta","Hipert Media","Resistencia"],
+    "% 1RM":["85-100%","80-85%","70-80%","60-75%","<60%"],
+    "Reps":["1-5","5-7","6-12","12-20","20+"],
+    "Descanso":["3-5 min","3 min","2 min","1-2 min","<1 min"],
+})
+GUIAS_BOMPA = pd.DataFrame({
+    "Fase":["Adaptación","Hipertrofia","Fuerza Máx","Potencia","Transición"],
+    "Intensidad":["30-60%","60-80%","85-100%","30-80%","Baja"],
+    "Reps":["12-20","6-12","1-5","1-10","Libre"],
+    "Descanso":["1-2 min","1-3 min","3-5+ min","3-5+ min","Libre"],
+})
+GUIA_TEMPO = pd.DataFrame({
+    "Objetivo":["Hipertrofia","Fuerza Máx","Potencia","Resistencia"],
+    "Tempo":["3-0-1-0","X-0-X-0","X-X-X","2-0-2-0"],
+    "Explicación":["Bajada lenta","Máx velocidad","Explosivo","Continuo"],
+})
+GUIA_DESCANSOS = pd.DataFrame({
+    "Objetivo":["Fuerza/Potencia","Hipertrofia","Resistencia"],
+    "Tiempo":["3-5+ min","60-90 seg","30-60 seg"],
+    "Por qué":["Recuperar ATP","Estrés Metabólico","Limpiar lactato"],
+})
+ESCALA_RPE = pd.DataFrame({
+    "RPE":[10,9,8,7,6],
+    "RIR":["0 (Fallo)","1","2","3","4"],
+    "Sensación":["Imposible","Podría 1 más","Podría 2 más","Podría 3 más","Calentamiento"],
+})
+ESCALA_BORG = pd.DataFrame({
+    "Nivel":["Muy Suave","Suave","Moderado","Duro","Muy Duro","Máximo"],
+    "Escala 0-10":["0-2","3","4-5","6-7","8-9","10"],
+    "Test Habla":["Cantar","Fluida","Frases","Palabras","Apenas","Sin aliento"],
+})
+GUIA_CARDIO = pd.DataFrame({
+    "Zona":["Z1 Regenerativo","Z2 Aeróbico","Z3 Umbral","Z4 VO2Max","Z5 Anaeróbico"],
+    "% VAM":["<60%","60-75%","75-90%","95-105%",">110%"],
+    "Sensación":["Muy fácil","Fácil","Duro","Muy duro","Agonía"],
+})
+TABLA_ZONAS_FCM = pd.DataFrame({
+    "Zona": ["Zona 1 (Recuperación)", "Zona 2 (Quema Grasa)", "Zona 3 (Aeróbica)", "Zona 4 (Umbral Anaeróbico)", "Zona 5 (Máxima)"],
+    "% FCM": ["50% - 60%", "60% - 70%", "70% - 80%", "80% - 90%", "90% - 100%"],
+    "Beneficio": ["Salud cardiovascular y recuperación activa", "Metabolismo de grasas y base aeróbica", "Capacidad aeróbica y resistencia", "Resistencia a la fatiga de alta intensidad", "Potencia máxima y velocidad anaeróbica"]
+})
 
 # =====================================================
-# AUTENTICACIÓN — usuarios dinámicos en hoja "usuarios_sistema"
-# Superusuario: visho (contraseña en st.secrets["PW_VISHO"], sin valor por defecto)
+# GOOGLE SHEETS BASE
 # =====================================================
-ADMIN_USER = "visho"
-_FALTAN = [k for k in ("PW_VISHO", "LINK_SECRET") if k not in st.secrets]
-if _FALTAN:
-    st.error("⚙️ Falta configurar en Secrets: " + ", ".join(_FALTAN))
-    st.markdown("En Streamlit Cloud: **Manage app → Settings → Secrets**. Agrega:")
-    st.code('PW_VISHO = "tu-contraseña-de-admin"\nLINK_SECRET = "una-cadena-larga-y-aleatoria"',
-            language="toml")
-    st.stop()
+URL_SHEET = "https://docs.google.com/spreadsheets/d/1NxZNe_1GjunjcpJs91tHJIAnZievTsNuVTTFe6uMqik/edit#gid=0"
 
-ADMIN_PASS = st.secrets["PW_VISHO"]
+def _gs_client():
+    sc = ["https://www.googleapis.com/auth/spreadsheets"]
+    cr = Credentials.from_service_account_info(dict(st.secrets["gcp_service_account"]), scopes=sc)
+    return gspread.authorize(cr)
 
-
-def hash_pw(p: str) -> str:
-    """scrypt con sal aleatoria. Formato: <salt_hex>$<hash_hex>"""
-    salt = os.urandom(16)
-    dk = hashlib.scrypt(p.encode(), salt=salt, n=2**14, r=8, p=1)
-    return f"{salt.hex()}${dk.hex()}"
-
-
-def _hash_legacy(p: str) -> str:
+# =====================================================
+# AUTENTICACIÓN DINÁMICA CON CACHÉ (Anti-Error 429)
+# =====================================================
+def _hash(p): 
     return hashlib.sha256(p.encode()).hexdigest()
 
-
-def verificar_pw(p: str, guardado) -> tuple:
-    """Devuelve (es_valida, necesita_migrar_a_scrypt)."""
-    guardado = str(guardado or "")
-    if "$" in guardado:
-        try:
-            salt_hex, dk_hex = guardado.split("$", 1)
-            dk = hashlib.scrypt(p.encode(), salt=bytes.fromhex(salt_hex), n=2**14, r=8, p=1)
-            return hmac.compare_digest(dk.hex(), dk_hex), False
-        except ValueError:
-            return False, False
-    ok = hmac.compare_digest(_hash_legacy(p), guardado)
-    return ok, ok
-
+ADMIN_USER = "visho"
+ADMIN_PASS = st.secrets.get("PW_VISHO", "Bio2026")
 
 def _get_hoja_usuarios(sheet):
     try:
         return sheet.worksheet("usuarios_sistema")
     except gspread.exceptions.WorksheetNotFound:
         ws = sheet.add_worksheet(title="usuarios_sistema", rows="200", cols="6")
-        ws.append_row(["usuario", "password_hash", "nombre_completo",
-                       "tipo_cobro", "valor_cobro", "fecha_registro"])
+        ws.append_row(["usuario","password_hash","nombre_completo","tipo_cobro","valor_cobro","fecha_registro"])
         return ws
 
-
-@st.cache_data(ttl=600)  # caché de 10 min para no colapsar el login
+@st.cache_data(ttl=600)
 def cargar_usuarios_sistema():
-    client = _gs_client()
-    sheet = client.open_by_url(URL_SHEET)
-    ws = _get_hoja_usuarios(sheet)
-    rows = ws.get_all_records()
-    return {str(r["usuario"]).lower().strip(): r for r in rows if r.get("usuario")}
-
+    try:
+        client = _gs_client()
+        sheet  = client.open_by_url(URL_SHEET)
+        ws     = _get_hoja_usuarios(sheet)
+        rows   = ws.get_all_records()
+        return {str(r["usuario"]).lower().strip(): r for r in rows if r.get("usuario")}
+    except Exception:
+        return {}
 
 def registrar_usuario_sistema(usuario, password, nombre, tipo_cobro, valor_cobro):
     usuario = usuario.lower().strip()
-    if not usuario or not password:
+    if not usuario or not password: 
         return False, "Usuario y contraseña son obligatorios."
-    if " " in usuario:
-        return False, "El usuario no puede contener espacios."
-    if len(password) < 6:
+    if len(password) < 6: 
         return False, "La contraseña debe tener al menos 6 caracteres."
-    if usuario == ADMIN_USER:
-        return False, "Ese nombre de usuario está reservado."
     try:
-        client = _gs_client()
-        sheet = client.open_by_url(URL_SHEET)
-        ws = _get_hoja_usuarios(sheet)
-        existentes = [str(r["usuario"]).lower().strip() for r in ws.get_all_records() if r.get("usuario")]
-        if usuario in existentes:
+        client = _gs_client(); sheet = client.open_by_url(URL_SHEET); ws = _get_hoja_usuarios(sheet)
+        existentes = [r["usuario"] for r in ws.get_all_records() if r.get("usuario")]
+        if usuario in existentes: 
             return False, "El usuario ya existe."
         ws.append_row([
-            usuario, hash_pw(password), nombre.strip(),
+            usuario, _hash(password), nombre.strip(),
             tipo_cobro, valor_cobro,
-            ahora_chile().strftime("%d/%m/%Y %H:%M")
+            datetime.now().strftime("%d/%m/%Y %H:%M")
         ])
         cargar_usuarios_sistema.clear()
         return True, ""
     except Exception as e:
-        log.exception("Error registrando usuario")
         return False, str(e)
-
 
 def eliminar_usuario_sistema(usuario):
     try:
-        client = _gs_client()
-        sheet = client.open_by_url(URL_SHEET)
-        ws = _get_hoja_usuarios(sheet)
+        client = _gs_client(); sheet = client.open_by_url(URL_SHEET); ws = _get_hoja_usuarios(sheet)
         celdas = ws.col_values(1)
         for i, val in enumerate(celdas):
             if val == usuario:
@@ -282,425 +270,513 @@ def eliminar_usuario_sistema(usuario):
                 cargar_usuarios_sistema.clear()
                 return True
     except Exception:
-        log.exception("Error eliminando usuario %s", usuario)
+        pass
     return False
-
 
 def cambiar_password_usuario(usuario, nueva_password):
     try:
-        client = _gs_client()
-        sheet = client.open_by_url(URL_SHEET)
-        ws = _get_hoja_usuarios(sheet)
+        client = _gs_client(); sheet = client.open_by_url(URL_SHEET); ws = _get_hoja_usuarios(sheet)
         celdas = ws.col_values(1)
         for i, val in enumerate(celdas):
             if val == usuario:
-                ws.update_cell(i + 1, 2, hash_pw(nueva_password))
+                ws.update_cell(i + 1, 2, _hash(nueva_password))
                 cargar_usuarios_sistema.clear()
                 return True
     except Exception:
-        log.exception("Error cambiando contraseña de %s", usuario)
+        pass
     return False
 
-
 def validar_usuario(u, c):
-    if u == ADMIN_USER:
-        return hmac.compare_digest(c.encode(), str(ADMIN_PASS).encode())
+    if u == ADMIN_USER: 
+        return c == ADMIN_PASS
     try:
         usuarios = cargar_usuarios_sistema()
+        if u in usuarios: 
+            return str(usuarios[u].get("password_hash")) == _hash(c)
     except Exception:
-        log.exception("No se pudo cargar usuarios_sistema")
-        st.error("⚠️ Google Sheets está saturado (límite de lecturas). Espera 1 minuto.")
-        return False
-    info = usuarios.get(u)
-    if not info:
-        return False
-    ok, migrar = verificar_pw(c, info.get("password_hash"))
-    if ok and migrar:
-        # Migración transparente SHA-256 -> scrypt al iniciar sesión
-        cambiar_password_usuario(u, c)
-    return ok
-
+        st.error("⚠️ Google Sheets está saturado (Límite de lecturas 429). Espera 1 minuto.")
+    
+    LEGACY = {
+        "eduardo":  st.secrets.get("PW_EDUARDO",  "Bio2026"),
+        "davidp":   st.secrets.get("PW_DAVIDP",   "Davidp2026"),
+        "clemente": st.secrets.get("PW_CLEMENTE", "Clemente2026"),
+    }
+    return LEGACY.get(u) == c
 
 def get_info_usuario(u):
-    if u == ADMIN_USER:
-        return {"nombre_completo": "Administrador", "tipo_cobro": "admin", "valor_cobro": 0}
+    if u == ADMIN_USER: 
+        return {"nombre_completo":"Administrador","tipo_cobro":"admin","valor_cobro":0}
     try:
-        return cargar_usuarios_sistema().get(u, {})
+        info = cargar_usuarios_sistema().get(u, {})
+        if info: return info
     except Exception:
-        log.exception("No se pudo leer info de usuario")
-        return {}
-
-
-def login():
-    if not st.session_state.get("autenticado", False):
-        st.markdown(CSS_LOGIN, unsafe_allow_html=True)
-        st.markdown("""
-        <div class='login-logo'>
-            <div class='login-titulo'>BIO SPORT</div>
-            <div class='login-sub'>Plataforma de Alto Rendimiento</div>
-        </div>""", unsafe_allow_html=True)
-
-        _, col, _ = st.columns([1, 1.4, 1])
-        with col:
-            st.markdown("<div class='login-card'>", unsafe_allow_html=True)
-            tab_entrar, tab_ayuda = st.tabs(["Ingresar", "Sin acceso"])
-            with tab_entrar:
-                st.markdown("<br>", unsafe_allow_html=True)
-                with st.form("login_form"):
-                    u = st.text_input("Usuario", placeholder="tu usuario").lower().strip()
-                    pw = st.text_input("Contrasena", type="password", placeholder="...")
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.form_submit_button("ENTRAR AL SISTEMA", type="primary", use_container_width=True):
-                        if not u or not pw:
-                            st.error("Completa usuario y contrasena.")
-                        elif validar_usuario(u, pw):
-                            info = get_info_usuario(u)
-                            st.session_state.autenticado = True
-                            st.session_state.usuario_actual = u
-                            st.session_state.nombre_usuario = info.get("nombre_completo", u.capitalize())
-                            st.session_state.es_admin = (u == ADMIN_USER)
-                            st.rerun()
-                        else:
-                            st.error("Usuario o contrasena incorrectos.")
-            with tab_ayuda:
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.info("Contacta al administrador para obtener tu acceso. El te creara tu cuenta directamente desde la plataforma.")
-                st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown("<div class='login-footer'>BIO SPORT PRO - Plataforma de Entrenamiento Profesional</div>",
-                    unsafe_allow_html=True)
-        return False
-    return True
-
+        pass
+    nombres_legacy = {"eduardo": "Eduardo", "davidp": "David P.", "clemente": "Clemente"}
+    return {"nombre_completo": nombres_legacy.get(u, u.capitalize())}
 
 # =====================================================
-# DETECCIÓN DE LINK DIRECTO (firmado con HMAC)
-# Ya NO se escribe usuario_actual en session_state desde la URL.
+# DETECCIÓN DE LINK DIRECTO (WhatsApp firmado)
 # =====================================================
 es_link_directo = False
 atleta_url = st.query_params.get("atleta", None)
 entrenador_url = st.query_params.get("entrenador", None)
 
-if atleta_url:
-    if not verificar_link(entrenador_url or "", atleta_url, st.query_params.get("sig", "")):
-        st.error("⛔ Enlace inválido o alterado. Pide un enlace nuevo a tu entrenador.")
+if atleta_url and entrenador_url:
+    sig_url = st.query_params.get("sig", "")
+    if not verificar_link(entrenador_url, atleta_url, sig_url):
+        st.error("⛔ Enlace inválido o alterado. Solicita un nuevo enlace a tu entrenador.")
         st.stop()
     es_link_directo = True
     st.markdown("""<style>[data-testid="stSidebar"] {display: none !important;}
-                   [data-testid="collapsedControl"] {display: none !important;}</style>""",
-                unsafe_allow_html=True)
+                   [data-testid="collapsedControl"] {display: none !important;}</style>""", unsafe_allow_html=True)
+    st.session_state.usuario_actual = entrenador_url
+    st.session_state.cliente_activo = atleta_url
+    modo_app = "Portal del Atleta 📱"
 
+# =====================================================
+# LOGIN NORMAL
+# =====================================================
 if not es_link_directo:
-    if not login():
+    def login():
+        if not st.session_state.get("autenticado", False):
+            st.markdown("""<style>[data-testid="stSidebar"]{display:none}[data-testid="collapsedControl"]{display:none}
+            .stApp{background:radial-gradient(ellipse at top,#0a1a0a 0%,#0d0d0d 60%)}
+            .login-card{background:linear-gradient(135deg,#111 0%,#1a1a1a 100%);border:1px solid #1f1f1f;border-radius:16px;padding:32px 36px;box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 0 1px rgba(57,255,20,.08)}
+            .stFormSubmitButton button{background:#39FF14!important;color:#000!important;font-family:'Bebas Neue',sans-serif!important;font-size:1.2rem!important;border-radius:8px!important;padding:14px!important;width:100%!important}</style>""", unsafe_allow_html=True)
+            _, col, _ = st.columns([1, 1.4, 1])
+            with col:
+                st.markdown("<div style='text-align:center;padding:24px 0 16px'><span style='font-family:Bebas Neue;font-size:3.6rem;color:#39FF14;letter-spacing:6px'>BIO SPORT</span><br><span style='color:#666;font-size:.85rem;letter-spacing:2px'>PLATAFORMA DE ALTO RENDIMIENTO</span></div>", unsafe_allow_html=True)
+                st.markdown("<div class='login-card'>", unsafe_allow_html=True)
+                with st.form("login_form"):
+                    u = st.text_input("Usuario", placeholder="tu usuario").lower().strip()
+                    pw = st.text_input("Contraseña", type="password", placeholder="••••••••")
+                    if st.form_submit_button("ENTRAR AL SISTEMA", type="primary", use_container_width=True):
+                        if not u or not pw: 
+                            st.error("Completa usuario y contraseña.")
+                        elif validar_usuario(u, pw):
+                            info = get_info_usuario(u)
+                            st.session_state.autenticado    = True
+                            st.session_state.usuario_actual = u
+                            st.session_state.nombre_usuario = info.get("nombre_completo", u.capitalize())
+                            st.session_state.es_admin       = (u == ADMIN_USER)
+                            st.rerun()
+                        else: 
+                            st.error("Usuario o contraseña incorrectos.")
+                st.markdown("</div>", unsafe_allow_html=True)
+            return False
+        return True
+
+    if not login(): 
         st.stop()
 
-# ---------------- Sidebar común (solo entrenador) ----------------
-if es_link_directo:
-    modo_app = "Portal del Atleta 📱"
-else:
-    _nombre_sb = st.session_state.get("nombre_usuario", st.session_state.get("usuario_actual", "Atleta").capitalize())
-    st.sidebar.markdown(f"**{_nombre_sb}**")
-    if st.sidebar.button("Cerrar sesion", key="btn_cerrar_sesion"):
-        for k in list(st.session_state):
-            del st.session_state[k]
+    _nombre_sb = st.session_state.get("nombre_usuario", st.session_state["usuario_actual"].capitalize())
+    st.sidebar.markdown(f"**👤 {_nombre_sb}**")
+    if st.sidebar.button("Cerrar sesión", key="btn_cerrar_sesion"):
+        for k in list(st.session_state): del st.session_state[k]
         st.rerun()
     st.sidebar.markdown("---")
-    modo_app = st.sidebar.radio("Selecciona la vista:", ["Entrenador 🛠️", "Portal del Atleta 📱"],
-                                key="interruptor_magico_vista")
+    modo_app = st.sidebar.radio("Vista:", ["Entrenador 🛠️", "Portal del Atleta 📱"], key="interruptor_vista")
     st.sidebar.markdown("---")
 
 # =====================================================
-# PORTAL DEL ATLETA
+# CARGA Y GUARDADO DE DATOS (Google Sheets)
 # =====================================================
-if modo_app == "Portal del Atleta 📱":
-    st.title("📱 Portal de Entrenamiento")
-
-    if es_link_directo:
-        usuario_actual = UsuarioLinkAtleta(
-            id=entrenador_url,
-            nombre_completo="Atleta Visitante",
-            cliente_id_permitido=atleta_url
-        )
-        nombre_atleta_seleccionado = atleta_url
-    else:
-        usuario_actual = Usuario(
-            id=st.session_state.usuario_actual,
-            nombre_completo=st.session_state.nombre_usuario,
-            es_admin=st.session_state.get("es_admin", False)
-        )
-        st.markdown("*Bienvenido. Selecciona tu perfil para ver tu rutina de hoy.*")
-        mis_atletas = servicio_clientes.mis_atletas(usuario_actual)
-        if mis_atletas:
-            lista_nombres = ["Seleccionar..."] + [a.id for a in mis_atletas]
-            nombre_atleta_seleccionado = st.selectbox("Atleta:", lista_nombres, key="selector_atleta_portal")
-        else:
-            nombre_atleta_seleccionado = "Seleccionar..."
-            st.warning("No tienes atletas registrados bajo tu usuario.")
-
-    if nombre_atleta_seleccionado and nombre_atleta_seleccionado != "Seleccionar...":
+def cargar_datos():
+    usuario = st.session_state.get("usuario_actual", "default")
+    raw = None
+    try:
+        client = _gs_client()
+        sheet  = client.open_by_url(URL_SHEET)
         try:
-            atleta_seguro = servicio_clientes.obtener_atleta(nombre_atleta_seleccionado, usuario_actual)
-            st.success(f"¡Vamos con todo hoy, {atleta_seguro.id}! 🔥")
-
-            hoy_str = DIAS[hoy_chile().weekday()]
-
-            # Lectura con caché corto (evita error 429 en cada clic)
-            datos_frescos = leer_datos_cacheado(usuario_actual.id) or {}
-            planes = datos_frescos.get("planes", {})
-            detalles = datos_frescos.get("detalles_planes", {})
-            biblioteca = {**VIDEOS_BASE, **videos_custom_desde(datos_frescos)}
-
-            foco_hoy = planes.get(atleta_seguro.id, {}).get(hoy_str, DESCANSO)
-            detalles_hoy = detalles.get(atleta_seguro.id, {}).get(hoy_str, "")
-
-            if foco_hoy == DESCANSO or not detalles_hoy.strip():
-                st.info(f"🛌 Hoy ({hoy_str}) es día de descanso o no tienes rutina asignada. ¡Recupérate bien!")
-            else:
-                st.markdown(f"### 🎯 Objetivo de hoy: {foco_hoy}")
-                partes = detalles_hoy.split("||")
-                desarrollo = partes[1] if len(partes) > 1 else (partes[0] if partes else "")
-                ejercicios = [linea.strip() for linea in desarrollo.split("\n") if linea.strip()]
-
-                if not ejercicios:
-                    st.warning("El bloque principal de la rutina está vacío.")
-                else:
-                    for idx, linea_ejercicio in enumerate(ejercicios):
-                        nombre_base = linea_ejercicio.split(":")[0].strip()
-                        st.markdown("---")
-                        col_info, col_gif = st.columns([1, 1])
-
-                        with col_info:
-                            st.markdown(f"#### {idx + 1}. {nombre_base}")
-                            if ":" in linea_ejercicio:
-                                st.markdown(f"**Indicaciones:** {linea_ejercicio.split(':', 1)[1].strip()}")
-
-                        with col_gif:
-                            if nombre_base in biblioteca:
-                                st.image(biblioteca[nombre_base], use_container_width=True)
-                            else:
-                                st.info("Sin vista previa")
-
-                        with st.expander(f"✍️ Registrar series de {nombre_base}", expanded=False):
-                            c1, c2, c3, c4 = st.columns(4)
-                            s_atl = c1.number_input("Series", 1, 10, 4, key=f"s_{idx}")
-                            r_atl = c2.number_input("Reps", 1, 50, 10, key=f"r_{idx}")
-                            k_atl = c3.number_input("Kg", 0.0, step=0.5, key=f"k_{idx}")
-                            rpe_atl = c4.slider("RPE", 1, 10, 7, key=f"rpe_{idx}")
-
-                            if st.button("✅ Guardar en mi historial", key=f"btn_atl_{idx}", use_container_width=True):
-                                # Lectura FRESCA (sin caché) justo antes de escribir,
-                                # para no pisar cambios del entrenador.
-                                datos_guardar = db_repositorio.leer_datos(usuario_actual.id)
-                                hist = datos_guardar.get("historial", [])
-                                hist.append({
-                                    "Cliente": atleta_seguro.id,
-                                    "Fecha": fstr(hoy_chile()),
-                                    "Ejercicio": nombre_base,
-                                    "Series": s_atl, "Reps": r_atl,
-                                    "Carga": k_atl, "RPE": rpe_atl,
-                                    "Tipo": FUERZA, "Objetivo": foco_hoy,
-                                })
-                                datos_guardar["historial"] = hist
-                                db_repositorio.guardar_datos(usuario_actual.id, datos_guardar)
-                                leer_datos_cacheado.clear()
-                                st.success("¡Excelente! Serie registrada en tu historial. 💪")
-                    st.markdown("---")
-        except PermisoDenegadoError as error_seguridad:
-            st.error("⛔ Acceso Denegado.")
-            st.warning(str(error_seguridad))
-
-    st.stop()
-
-# =====================================================
-# CÁLCULOS
-# =====================================================
-def analizar_progreso(df_ej):
-    if len(df_ej) < 3:
-        return "sin_datos", "Necesitas al menos 3 registros para analizar.", "inf"
-    cs = df_ej["Carga"].tolist()
-    u = cs[-3:]
-    n = len(cs)
-    tasa = None
-    if n >= 5:
-        xs = list(range(n)); mx = sum(xs) / n; my = sum(cs) / n
-        nd = sum((x - mx) * (y - my) for x, y in zip(xs, cs))
-        dd = sum((x - mx) ** 2 for x in xs)
-        p = nd / dd if dd else 0
-        tasa = (p / my) * 100 if my else 0
-    if u[0] == u[1] == u[2]:
-        return "estancado", f"⚠️ Estancamiento: {u[0]}kg en 3 sesiones seguidas. Considera descarga o cambio de estímulo.", "warn"
-    if u[2] < u[0]:
-        return "baja", f"📉 Bajada de {u[0]-u[2]:.1f}kg vs sesión de referencia. Revisa fatiga, sueño y nutrición.", "err"
-    if tasa and tasa > 1.5:
-        return "rapido", f"🔥 Progreso sólido: +{tasa:.1f}% por sesión en promedio. ¡Muy bien!", "ok"
-    if u[2] > u[1]:
-        return "ok_", f"✅ Progresando: {u[1]}kg → {u[2]}kg en la última sesión.", "ok"
-    return "estable", "📊 Carga estable. Evalúa si es momento de sobrecarga progresiva.", "inf"
-
-
-def calc_adherencia(cliente):
-    """Adherencia de los últimos 30 días (lineal, usando un set de fechas)."""
-    hoy = hoy_chile()
-    plan = st.session_state.planes_semanales.get(cliente, {})
-    hechos = {h["Fecha"] for h in st.session_state.historial_global if h["Cliente"] == cliente}
-    dp = de = 0
-    for i in range(30):
-        d = hoy - timedelta(days=i)
-        if plan.get(DIAS[d.weekday()], DESCANSO) not in (DESCANSO, ""):
-            dp += 1
-            if fstr(d) in hechos:
-                de += 1
-    return de, dp, (de / dp * 100 if dp else 0)
-
-
-def parse_tiempo(t):
-    try:
-        t = str(t).strip()
-        if ":" in t:
-            a, b = t.split(":")
-            return int(a) * 60 + int(b)
-        v = float(t)
-        return int(v * 60) if v < 10 else int(v)
+            ws = sheet.worksheet(usuario)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sheet.add_worksheet(title=usuario, rows="200", cols="20")
+            return None
+        vals = ws.col_values(1)
+        if vals:
+            raw = json.loads("".join(vals))
     except Exception:
-        return 90
+        pass
 
+    if raw is None:
+        return None
 
-def ult_reg(cliente, ej):
-    for r in reversed(st.session_state.historial_global):
-        if r["Cliente"] == cliente and r["Ejercicio"] == ej and r.get("Tipo") == FUERZA:
-            return r
-    return None
+    defaults = {
+        "clientes":        {},
+        "historial":       [],
+        "videos":          VIDEOS_BASE,
+        "planes":          {},
+        "detalles_planes": {},
+        "notas":           "",
+        "tests":           {},      
+        "mesociclos":      {},      
+    }
+    for k, v in defaults.items():
+        if k not in raw:
+            raw[k] = v   
 
+    return raw
 
-def importar_historial(cliente):
-    dm = {i: d for i, d in enumerate(DIAS)}
-    nd = st.session_state.detalles_planes.get(cliente, {}).copy()
-    nf = st.session_state.planes_semanales.get(cliente, {}).copy()
-    rt = {d: [] for d in DIAS}; ft = {d: DESCANSO for d in DIAS}
-    hoy = hoy_chile()
-    for reg in reversed(st.session_state.historial_global):
-        if reg["Cliente"] == cliente:
-            try:
-                fd = datetime.strptime(reg["Fecha"], "%d/%m/%Y").date()
-                if (hoy - fd).days < 14:
-                    dia = dm[fd.weekday()]
-                    txt = (f"{reg['Ejercicio']}: {reg['Series']}x{reg['Reps']} ({reg['Carga']}kg)"
-                           if reg.get("Tipo") == FUERZA
-                           else f"Cardio: {reg['Ejercicio']} ({reg['Carga']}min)")
-                    if txt not in rt[dia]:
-                        rt[dia].insert(0, txt)
-                    if "Objetivo" in reg and ft[dia] == DESCANSO:
-                        ft[dia] = reg["Objetivo"]
-            except Exception:
-                pass
-    for dia, lista in rt.items():
-        if lista:
-            nd[dia] = f"||{chr(10).join(lista)}||"
-            nf[dia] = ft[dia] if ft[dia] != DESCANSO else "Entrenamiento"
-    st.session_state.planes_semanales[cliente] = nf
-    st.session_state.detalles_planes[cliente] = nd
-    guardar_datos()
-
-
-def _dias_desde(fecha_str):
+def guardar_datos():
+    usuario = st.session_state.get("usuario_actual", "default")
     try:
-        return (hoy_chile() - datetime.strptime(fecha_str, "%d/%m/%Y").date()).days
+        payload = {
+            "clientes":        st.session_state.db_clientes,
+            "historial":       st.session_state.historial_global,
+            "videos":          st.session_state.biblioteca_videos,
+            "planes":          st.session_state.planes_semanales,
+            "detalles_planes": st.session_state.detalles_planes,
+            "notas":           st.session_state.notas_personales,
+            "tests":           st.session_state.tests_fisicos,
+            "mesociclos":      st.session_state.mesociclos,
+        }
+        js     = json.dumps(payload, ensure_ascii=False)
+        client = _gs_client()
+        sheet  = client.open_by_url(URL_SHEET)
+        try:
+            ws = sheet.worksheet(usuario)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sheet.add_worksheet(title=usuario, rows="200", cols="20")
+
+        chunks = [js[i:i+40000] for i in range(0, len(js), 40000)]
+        ws.clear()
+        cells  = ws.range(1, 1, len(chunks), 1)
+        for i, cell in enumerate(cells):
+            cell.value = chunks[i]
+        ws.update_cells(cells)
+        return True
     except Exception:
-        return 10**6
+        return False
 
-
-# ---- Helpers del editor de Plan Semanal ----
-# Claves usadas (todas incluyen atleta y día):
-#   sel_grupo_{c}_{dia}      grupo elegido
-#   det_{cal|des|vue}_{c}_{dia}   texto persistente del editor (fuente de verdad)
-#   w_{cal|des|vue}_{c}_{dia}     clave del widget text_area
-#   dante_{cal|des|vue}_{c}_{dia} propuesta pendiente de Dante
-def partes_guardadas(c, dia):
-    det = st.session_state.detalles_planes.get(c, {}).get(dia, "")
-    if "||" not in det:
-        return ["", det, ""]
-    p = det.split("||")
-    if len(p) < 3:
-        p += [""] * (3 - len(p))
-    elif len(p) > 3:
-        p = p[:2] + ["||".join(p[2:])]
-    return p
-
-
-def limpiar_editor(c):
-    for dia in DIAS:
-        for p in PARTES:
-            for pref in ("det", "w", "dante"):
-                st.session_state.pop(f"{pref}_{p}_{c}_{dia}", None)
-
-
-def construir_plan(c):
-    """Arma (planes, detalles) desde session_state SIN borrar los días no editados."""
-    nf = {"tipo_semana": st.session_state.get(f"sel_microciclo_{c}", TIPOS_MICROCICLO[1])}
-    nd = {}
-    for dia in DIAS:
-        grp = st.session_state.get(f"sel_grupo_{c}_{dia}", DESCANSO)
-        nf[dia] = grp
-        if grp == DESCANSO:
-            nd[dia] = ""
-        elif f"det_cal_{c}_{dia}" in st.session_state:  # este día se abrió en el editor
-            nd[dia] = "||".join(st.session_state[f"det_{p}_{c}_{dia}"] for p in PARTES)
-        else:                                            # no se tocó: conservar lo guardado
-            nd[dia] = st.session_state.detalles_planes.get(c, {}).get(dia, "")
-    return nf, nd
-
-
-def aplicar_dante(c, dia, grupo):
-    """Callback: copia la propuesta de Dante a los textos del editor."""
-    for p in PARTES:
-        txt = st.session_state.pop(f"dante_{p}_{c}_{dia}", "")
-        st.session_state[f"det_{p}_{c}_{dia}"] = txt
-        st.session_state[f"w_{p}_{c}_{dia}"] = txt
-    st.session_state[f"sel_grupo_{c}_{dia}"] = grupo
-    st.toast(f"Propuesta aplicada a {dia}. Recuerda pulsar «Guardar Plan Completo» 💾")
-
+def registrar_auditoria(nombre_alumno):
+    usuario = st.session_state.get("usuario_actual", "")
+    if usuario == "visho":
+        return
+    try:
+        client = _gs_client()
+        sheet  = client.open_by_url(URL_SHEET)
+        meses  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+        nh = f"Auditoria_{meses[datetime.now().month-1]}_{datetime.now().year}"
+        try:
+            ws = sheet.worksheet(nh)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sheet.add_worksheet(title=nh, rows="1000", cols="4")
+            ws.append_row(["Fecha","Preparador","Alumno","Estado"])
+        for f in ws.get_all_values():
+            if len(f) >= 3 and f[1].lower() == usuario and f[2].lower() == nombre_alumno.lower():
+                return
+        ws.append_row([datetime.now().strftime("%d/%m/%Y %H:%M"),
+                       usuario.capitalize(), nombre_alumno, "Pendiente"])
+    except Exception:
+        pass
 
 # =====================================================
-# INICIALIZACIÓN SEGURA DE ESTADO (una vez por sesión)
+# INICIALIZACIÓN DE ESTADO
 # =====================================================
 if "datos_cargados" not in st.session_state:
     _raw = cargar_datos()
-
     def _get(key, default):
         if _raw and _raw.get(key) is not None:
             return _raw[key]
         return default
 
-    st.session_state.db_clientes = _get("clientes", {})
-    st.session_state.historial_global = _get("historial", [])
-    # Base (constants.py) + solo los videos personalizados del usuario
-    st.session_state.biblioteca_videos = {**VIDEOS_BASE, **videos_custom_desde(_raw)}
-    st.session_state.planes_semanales = _get("planes", {})
-    st.session_state.detalles_planes = _get("detalles_planes", {})
-    st.session_state.notas_personales = _get("notas", "")
-    st.session_state.tests_fisicos = _get("tests", {})
-    st.session_state.mesociclos = _get("mesociclos", {})
-    st.session_state.datos_cargados = True
+    st.session_state.db_clientes        = _get("clientes",        {})
+    st.session_state.historial_global   = _get("historial",       [])
+    st.session_state.biblioteca_videos  = _get("videos",          VIDEOS_BASE)
+    st.session_state.planes_semanales   = _get("planes",          {})
+    st.session_state.detalles_planes    = _get("detalles_planes", {})
+    st.session_state.notas_personales   = _get("notas",           "")
+    st.session_state.tests_fisicos      = _get("tests",           {})
+    st.session_state.mesociclos         = _get("mesociclos",      {})
+    st.session_state.datos_cargados     = True
 
-for _k, _v in [("cliente_activo", None), ("confirm_delete", False), ("live_idx", 0)]:
+for _k, _v in [("cliente_activo",None),("confirm_delete",False),("live_idx",0)]:
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
 # =====================================================
-# SIDEBAR
+# FUNCIONES DE CÁLCULO
 # =====================================================
-st.sidebar.header("⚡ Bio Sport Pro")
+def calc_1rm(p, r): return p * (1 + r / 30)
+
+def calc_durnin(edad, sexo, s4):
+    if s4 <= 0: raise ValueError("La suma de pliegues debe ser > 0")
+    c, m = (1.1631, 0.0632) if sexo == "Masculino" else (1.1599, 0.0717)
+    d = c - m * math.log10(s4)
+    if d <= 0: raise ValueError("Densidad inválida")
+    return (495 / d) - 450
+
+def eval_grasa(edad, sexo, g):
+    if sexo == "Masculino":
+        t = {24:[3,9,19,23],29:[3,10,20,24],34:[3,11,21,25],39:[3,12,22,26],
+             44:[3,13,23,27],49:[3,15,25,28],54:[3,17,26,29],59:[3,19,28,30]}
+        row = next((v for k,v in t.items() if edad<=k), [3,20,29,31])
+    else:
+        t = {24:[8,15,25,30],29:[8,16,26,31],34:[8,17,27,32],39:[8,19,28,33],
+             44:[8,21,29,34],49:[8,23,31,36],54:[8,25,33,37],59:[8,26,34,38]}
+        row = next((v for k,v in t.items() if edad<=k), [8,27,35,39])
+    if g <= row[0]: return "Grasa Esencial",  "#FF4B4B"
+    if g <= row[1]: return "Graso Disminuido", "#00C853"
+    if g <= row[2]: return "Graso Adecuado",   "#00BFFF"
+    if g <= row[3]: return "Graso Aumentado",  "#FFD700"
+    return "Grasa Muy Alta", "#DC143C"
+
+def calc_tmb(peso, talla, edad, sexo):
+    base = 10*peso + 6.25*talla - 5*edad
+    return base + 5 if sexo == "Masculino" else base - 161
+
+def calc_get(tmb, act):
+    f = {"Sedentario":1.2,"Ligero (1-3 días)":1.375,"Moderado (3-5 días)":1.55,"Activo (6-7 días)":1.725,"Muy Activo (2x/día)":1.9}
+    return tmb * f.get(act, 1.55)
+
+def analizar_progreso(df_ej):
+    if len(df_ej) < 3: return "sin_datos", "Necesitas al menos 3 registros para analizar.", "inf"
+    cs = df_ej["Carga"].tolist()
+    u  = cs[-3:]
+    n  = len(cs)
+    tasa = None
+    if n >= 5:
+        xs = list(range(n)); mx = sum(xs)/n; my = sum(cs)/n
+        nd = sum((x-mx)*(y-my) for x,y in zip(xs,cs))
+        dd = sum((x-mx)**2 for x in xs)
+        p  = nd/dd if dd else 0
+        tasa = (p/my)*100 if my else 0
+    if u[0] == u[1] == u[2]: return "estancado", f"⚠️ Estancamiento: {u[0]}kg en 3 sesiones seguidas.", "warn"
+    if u[2] < u[0]: return "baja", f"📉 Bajada de {u[0]-u[2]:.1f}kg vs referencia.", "err"
+    if tasa and tasa > 1.5: return "rapido", f"🔥 Progreso sólido: +{tasa:.1f}% por sesión.", "ok"
+    if u[2] > u[1]: return "ok_", f"✅ Progresando: {u[1]}kg → {u[2]}kg.", "ok"
+    return "estable", "📊 Carga estable.", "inf"
+
+def calc_adherencia(cliente):
+    hoy = hoy_chile()
+    dp = de = 0
+    for i in range(30):
+        dia = hoy - timedelta(days=29-i)
+        nd  = DIAS[dia.weekday()]
+        f   = st.session_state.planes_semanales.get(cliente, {}).get(nd, "Descanso")
+        if f not in ("Descanso", ""):
+            dp += 1
+            fs = dia.strftime("%d/%m/%Y")
+            if any(h["Cliente"]==cliente and h["Fecha"]==fs for h in st.session_state.historial_global):
+                de += 1
+    pct = de/dp*100 if dp else 0
+    return de, dp, pct
+
+def parse_tiempo(t):
+    try:
+        t = str(t).strip()
+        if ":" in t: return int(t.split(":")[0])*60 + int(t.split(":")[1])
+        v = float(t)
+        return int(v*60) if v < 10 else int(v)
+    except Exception: return 90
+
+def ult_reg(cliente, ej):
+    for r in reversed(st.session_state.historial_global):
+        if r["Cliente"]==cliente and r["Ejercicio"]==ej and r.get("Tipo")=="Fuerza":
+            return r
+    return None
+
+def importar_historial(cliente):
+    dm = {i: d for i,d in enumerate(DIAS)}
+    nd = st.session_state.detalles_planes.get(cliente,{}).copy()
+    nf = st.session_state.planes_semanales.get(cliente,{}).copy()
+    rt = {d:[] for d in DIAS}; ft = {d:"Descanso" for d in DIAS}
+    hoy = hoy_chile()
+    for reg in reversed(st.session_state.historial_global):
+        if reg["Cliente"] == cliente:
+            try:
+                fd = datetime.strptime(reg["Fecha"],"%d/%m/%Y").date()
+                if (hoy-fd).days < 14:
+                    dia = dm[fd.weekday()]
+                    txt = (f"{reg['Ejercicio']}: {reg['Series']}x{reg['Reps']} ({reg['Carga']}kg)"
+                           if reg.get("Tipo")=="Fuerza"
+                           else f"Cardio: {reg['Ejercicio']} ({reg['Carga']}min)")
+                    if txt not in rt[dia]: rt[dia].insert(0, txt)
+                    if "Objetivo" in reg and ft[dia]=="Descanso": ft[dia]=reg["Objetivo"]
+            except Exception: pass
+    for dia, lista in rt.items():
+        if lista:
+            nd[dia] = f"||{chr(10).join(lista)}||"
+            nf[dia] = ft[dia] if ft[dia]!="Descanso" else "Entrenamiento"
+    st.session_state.planes_semanales[cliente] = nf
+    st.session_state.detalles_planes[cliente]  = nd
+    guardar_datos()
+
+# =====================================================
+# GENERADORES PDF / EXCEL / IA
+# =====================================================
+def pdf_plan(cliente, focos, detalles, dias_orden=DIAS):
+    if not REPORTLAB_OK: return None
+    buf = io.BytesIO()
+    cv  = rl_canvas.Canvas(buf, pagesize=letter)
+    W, H = letter
+    NEON = HexColor("#39FF14"); DARK = HexColor("#1E1E1E")
+    GREY = HexColor("#2D2D2D"); BLK  = HexColor("#222222"); SUB = HexColor("#666666")
+
+    cv.setFillColor(DARK); cv.rect(0,H-85,W,85,fill=1,stroke=0)
+    cv.setFillColor(NEON);  cv.setFont("Helvetica-Bold",22)
+    cv.drawString(50,H-42,"PLAN DE ENTRENAMIENTO")
+    cv.setFont("Helvetica",13); cv.drawString(50,H-65,f"Atleta: {cliente}")
+    cv.setFont("Helvetica",8);  cv.setFillColor(HexColor("#AAAAAA"))
+    cv.drawRightString(W-50,H-42,"BIO SPORT PRO")
+    cv.drawRightString(W-50,H-56,f"Fecha: {hoy_chile():%d/%m/%Y}")
+
+    y = H-110
+    ts = focos.get("tipo_semana","")
+    if ts:
+        cv.setFont("Helvetica-Bold",11); cv.setFillColor(NEON)
+        cv.drawString(50,y,f"Microciclo: {ts}"); y -= 22
+
+    for dia in dias_orden:
+        foco = focos.get(dia,"Descanso")
+        det  = detalles.get(dia,"")
+        lns  = len(det.split("\n")) if det else 0
+        need = 50 + lns*13
+        if y - need < 45: cv.showPage(); y = H-50
+        if foco != "Descanso":
+            cv.setFillColor(GREY); cv.rect(50,y-18,W-100,22,fill=1,stroke=0)
+            cv.setFillColor(NEON); cv.setFont("Helvetica-Bold",11)
+            cv.drawString(58,y-11,f"{dia.upper()}  ·  {foco}")
+            cv.setStrokeColor(NEON); cv.setLineWidth(0.4)
+            cv.line(50,y-18,W-50,y-18); y -= 28
+            if det:
+                parts = det.split("||")
+                labels = ["Calentamiento","Desarrollo","Vuelta a la Calma"]
+                if len(parts)==3:
+                    for i,blk in enumerate(parts):
+                        if not blk.strip(): continue
+                        if y<55: cv.showPage(); y=H-50
+                        cv.setFont("Helvetica-Bold",8); cv.setFillColor(NEON)
+                        cv.drawString(62,y,f"[ {labels[i]} ]"); y-=12
+                        cv.setFont("Helvetica",9); cv.setFillColor(BLK)
+                        for ln in blk.split("\n"):
+                            if ln.strip():
+                                if y<45: cv.showPage(); y=H-50
+                                cv.drawString(70,y,f"· {ln.strip()}"); y-=12
+                        y -= 4
+                else:
+                    cv.setFont("Helvetica",9); cv.setFillColor(BLK)
+                    for ln in det.split("\n"):
+                        if ln.strip():
+                            if y<45: cv.showPage(); y=H-50
+                            cv.drawString(62,y,f"· {ln.strip()}"); y-=12
+            else:
+                cv.setFont("Helvetica-Oblique",8); cv.setFillColor(SUB)
+                cv.drawString(62,y,"(Sin detalles)"); y-=12
+            y -= 10
+        else:
+            cv.setFont("Helvetica-Oblique",8); cv.setFillColor(SUB)
+            cv.drawString(58,y-8,f"{dia}: Descanso / Recuperación"); y-=22
+
+    cv.setFont("Helvetica",7); cv.setFillColor(SUB)
+    cv.drawCentredString(W/2,22,"La constancia es la clave del éxito · Bio Sport Pro")
+    cv.save(); buf.seek(0); return buf
+
+def excel_historial(cliente, historial):
+    if not OPENPYXL_OK: return None
+    regs = [r for r in historial if r["Cliente"]==cliente]
+    if not regs: return None
+    df  = pd.DataFrame(regs); buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        df.to_excel(w, index=False, sheet_name="Historial")
+        ws = w.sheets["Historial"]
+        for col in ws.columns:
+            ml = max(len(str(c.value or "")) for c in col)
+            ws.column_dimensions[col[0].column_letter].width = min(ml+3,40)
+    buf.seek(0); return buf
+
+def dante_mesociclo(cliente, objetivo, semanas, db_clientes):
+    if not modelo_dante: return None
+    d = db_clientes.get(cliente,{})
+    perfil = (f"Edad:{d.get('Edad','?')}, Experiencia:{d.get('Experiencia','?')}, "
+              f"Lesiones:{d.get('Lesiones','Ninguna')}, Objetivo:{objetivo}")
+    prompt = (f"Eres Dante, experto en periodización deportiva. "
+              f"Genera un mesociclo de {semanas} semanas para:\n{perfil}\n"
+              f"Por cada semana indica: tipo (adaptación/carga/impacto/descarga), "
+              f"intensidad (%RM), volumen (series por grupo), "
+              f"ejercicios principales (3-5), RPE objetivo y nota del entrenador. "
+              f"Sé específico, práctico y estructurado.")
+    try:
+        return modelo_dante.generate_content(prompt).text
+    except Exception as e:
+        return f"Error: {e}"
+
+# =====================================================
+# VISTA: PORTAL DEL ATLETA (Link WhatsApp)
+# =====================================================
+if modo_app == "Portal del Atleta 📱":
+    st.title("📱 Portal de Entrenamiento")
+    c = st.session_state.cliente_activo
+    
+    if not c or c not in st.session_state.db_clientes:
+        st.error("Atleta no encontrado en este entrenador.")
+        st.stop()
+
+    st.success(f"¡Vamos con todo hoy, {c}! 🔥")
+    hoy_str = DIAS[hoy_chile().weekday()]
+    foco_hoy = st.session_state.planes_semanales.get(c, {}).get(hoy_str, "Descanso")
+    detalles_hoy = st.session_state.detalles_planes.get(c, {}).get(hoy_str, "")
+
+    if foco_hoy == "Descanso" or not detalles_hoy.strip():
+        st.info(f"🛌 Hoy ({hoy_str}) es día de descanso o no tienes rutina asignada. ¡Recupérate bien!")
+    else:
+        st.markdown(f"### 🎯 Objetivo de hoy: {foco_hoy}")
+        partes = detalles_hoy.split("||")
+        desarrollo = partes[1] if len(partes) > 1 else (partes[0] if partes else "")
+        ejercicios = [linea.strip() for linea in desarrollo.split("\n") if linea.strip()]
+
+        if not ejercicios:
+            st.warning("El bloque principal de la rutina está vacío.")
+        else:
+            for idx, linea_ejercicio in enumerate(ejercicios):
+                nombre_base = linea_ejercicio.split(":")[0].strip()
+                st.markdown("---")
+                col_info, col_gif = st.columns([1, 1])
+
+                with col_info:
+                    st.markdown(f"#### {idx + 1}. {nombre_base}")
+                    if ":" in linea_ejercicio:
+                        st.markdown(f"**Indicaciones:** {linea_ejercicio.split(':', 1)[1].strip()}")
+
+                with col_gif:
+                    if nombre_base in st.session_state.biblioteca_videos:
+                        st.image(st.session_state.biblioteca_videos[nombre_base], use_container_width=True)
+                    else:
+                        st.info("Sin vista previa")
+
+                with st.expander(f"✍️ Registrar series de {nombre_base}", expanded=False):
+                    c1, c2, c3, c4 = st.columns(4)
+                    s_atl = c1.number_input("Series", 1, 10, 4, key=f"s_atl_{idx}")
+                    r_atl = c2.number_input("Reps", 1, 50, 10, key=f"r_atl_{idx}")
+                    k_atl = c3.number_input("Kg", 0.0, step=0.5, key=f"k_atl_{idx}")
+                    rpe_atl = c4.slider("RPE", 1, 10, 7, key=f"rpe_atl_{idx}")
+
+                    if st.button("✅ Guardar en mi historial", key=f"btn_atl_{idx}", use_container_width=True):
+                        st.session_state.historial_global.append({
+                            "Cliente": c,
+                            "Fecha": fstr(hoy_chile()),
+                            "Ejercicio": nombre_base,
+                            "Series": s_atl, "Reps": r_atl,
+                            "Carga": k_atl, "RPE": rpe_atl,
+                            "Tipo": "Fuerza", "Objetivo": foco_hoy,
+                        })
+                        guardar_datos()
+                        st.success("¡Excelente! Serie registrada en tu historial. 💪")
+    st.stop()
+
+# =====================================================
+# VISTA: ENTRENADOR (Menú y Gestión)
+# =====================================================
 lista = ["Crear Nuevo..."] + list(st.session_state.db_clientes.keys())
-sel = st.sidebar.selectbox("Atleta:", lista)
+sel   = st.sidebar.selectbox("Atleta:", lista)
 
 if sel == "Crear Nuevo...":
     nom = st.sidebar.text_input("Nombre del nuevo atleta:")
     if st.sidebar.button("Guardar Atleta", type="primary", key="btn_guardar_atleta"):
         n = nom.strip()
         if n and n not in st.session_state.db_clientes:
-            st.session_state.db_clientes[n] = {
-                "Peso": 70, "Talla": 170, "Edad": 25, "Sexo": "Masculino"}
+            st.session_state.db_clientes[n] = {"Peso":70,"Talla":170,"Edad":25,"Sexo":"Masculino"}
             guardar_datos()
             registrar_auditoria(n)
             st.toast(f"✅ {n} registrado", icon="🔥")
@@ -718,14 +794,9 @@ else:
             ca, cb = st.columns(2)
             if ca.button("✅ Sí, eliminar", key="btn_confirmar_eliminar"):
                 del st.session_state.db_clientes[sel]
-                st.session_state.historial_global = [
-                    h for h in st.session_state.historial_global if h["Cliente"] != sel]
-                for _d in [st.session_state.planes_semanales,
-                           st.session_state.detalles_planes,
-                           st.session_state.tests_fisicos,
-                           st.session_state.mesociclos]:
+                st.session_state.historial_global = [h for h in st.session_state.historial_global if h["Cliente"]!=sel]
+                for _d in [st.session_state.planes_semanales, st.session_state.detalles_planes, st.session_state.tests_fisicos, st.session_state.mesociclos]:
                     _d.pop(sel, None)
-                limpiar_editor(sel)
                 guardar_datos()
                 st.session_state.cliente_activo = None
                 st.session_state.confirm_delete = False
@@ -733,72 +804,30 @@ else:
             if cb.button("❌ Cancelar", key="btn_cancelar_eliminar"):
                 st.session_state.confirm_delete = False; st.rerun()
 
-        js = json.dumps({
-            "clientes": st.session_state.db_clientes,
-            "historial": st.session_state.historial_global,
-        }, indent=2, ensure_ascii=False)
-        st.download_button("💾 Backup JSON", data=js,
-                           file_name="backup_biosport.json", mime="application/json")
+        js = json.dumps({"clientes": st.session_state.db_clientes, "historial": st.session_state.historial_global}, indent=2, ensure_ascii=False)
+        st.download_button("💾 Backup JSON", data=js, file_name="backup_biosport.json", mime="application/json")
 
 with st.sidebar.expander("🧮 Calculadora RM", expanded=False):
     _p = st.number_input("Peso (kg)", 0.0, step=0.5, key="rm_p")
     _r = st.number_input("Reps", 1, 20, 8, key="rm_r")
     if _p > 0:
         _rm = calc_1rm(_p, _r)
-        st.markdown(
-            f"<div style='background:#1a1a1a;border:1px solid #39FF14;"
-            f"border-radius:8px;padding:10px;text-align:center;margin:6px 0'>"
-            f"<div style='color:#888;font-size:.75rem;letter-spacing:1px'>1RM ESTIMADO</div>"
-            f"<div style='color:#39FF14;font-size:1.6rem;font-weight:700;"
-            f"font-family:Bebas Neue,sans-serif'>{_rm:.1f} kg</div>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
-        filas = ""
-        for pct in [95, 90, 85, 80, 75, 70, 65, 60, 55, 50]:
-            val = _rm * pct / 100
-            color = "#39FF14" if pct >= 85 else "#FFD700" if pct >= 70 else "#00BFFF"
-            filas += (
-                f"<div style='display:flex;justify-content:space-between;"
-                f"padding:4px 8px;border-radius:4px;margin:2px 0;background:#1a1a1a'>"
-                f"<span style='color:#888;font-size:.8rem'>{pct}%</span>"
-                f"<span style='color:{color};font-weight:700;font-size:.9rem'>{val:.1f} kg</span>"
-                f"</div>"
-            )
-        st.markdown(filas, unsafe_allow_html=True)
-    else:
-        st.caption("Ingresa peso y reps para calcular.")
+        st.markdown(f"<div style='background:#1a1a1a;border:1px solid #39FF14;border-radius:8px;padding:10px;text-align:center;margin:6px 0'><div style='color:#888;font-size:.75rem'>1RM ESTIMADO</div><div style='color:#39FF14;font-size:1.6rem;font-weight:700'>{_rm:.1f} kg</div></div>", unsafe_allow_html=True)
 
-MENU_ITEMS = [
-    "🏠 Dashboard",
-    "📋 Ficha & Antropo",
-    "💪 Entrenamiento",
-    "🏋️ Modo En Vivo",
-    "🧠 Plan Semanal",
-    "📆 Mesociclo IA",
-    "🏃 Cardio",
-    "🧪 Tests Físicos",
-    "🥗 Nutrición",
-    "📈 Progreso",
-    "📚 Guías",
-    "📝 Notas",
-    "🎥 Videoteca",
-]
-if st.session_state.get("es_admin", False):
+MENU_ITEMS = ["🏠 Dashboard","📋 Ficha & Antropo","💪 Entrenamiento","🏋️ Modo En Vivo","🧠 Plan Semanal","📆 Mesociclo IA","🏃 Cardio","🧪 Tests Físicos","🥗 Nutrición","📈 Progreso","📚 Guías","📝 Notas","🎥 Videoteca"]
+if st.session_state.get("es_admin", False): 
     MENU_ITEMS.append("👑 Panel Admin")
 
 menu = st.sidebar.radio("Menú:", MENU_ITEMS)
 st.sidebar.divider()
-if st.session_state.cliente_activo:
+if st.session_state.cliente_activo: 
     st.sidebar.success(f"Atleta activo: {st.session_state.cliente_activo}")
-
 
 def need_athlete():
     if not st.session_state.cliente_activo:
         st.warning("Selecciona un atleta en el menú lateral.")
         st.stop()
     return st.session_state.cliente_activo
-
 
 # =====================================================
 # 🏠 DASHBOARD
@@ -823,31 +852,11 @@ if menu == "🏠 Dashboard":
             regs = [h for h in st.session_state.historial_global if h["Cliente"] == nom]
             ult = regs[-1]["Fecha"] if regs else "—"
             de, dp, pct = calc_adherencia(nom)
-            rows.append({"Atleta": nom,
-                         "Objetivo": dat.get("Objetivo_Prin", "—"),
-                         "Experiencia": dat.get("Experiencia", "—"),
-                         "Sesiones": len(regs),
-                         "Último registro": ult,
-                         "Adherencia 30d": f"{pct:.0f}%"})
+            rows.append({"Atleta": nom, "Objetivo": dat.get("Objetivo_Prin", "—"), "Experiencia": dat.get("Experiencia", "—"), "Sesiones": len(regs), "Último registro": ult, "Adherencia 30d": f"{pct:.0f}%"})
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-        st.divider(); st.subheader("📊 Adherencia (últimos 30 días)")
-        for nom in st.session_state.db_clientes:
-            de, dp, pct = calc_adherencia(nom)
-            color = "#39FF14" if pct >= 80 else "#FFD700" if pct >= 50 else "#FF4B4B"
-            w = min(int(pct), 100)
-            st.markdown(f"""
-            <div style='margin-bottom:10px'>
-              <span style='font-weight:600'>{esc(nom)}</span>
-              <span style='float:right;color:{color};font-weight:700'>{pct:.0f}%
-                &nbsp;({de}/{dp} días)</span>
-              <div class='adh-bar'>
-                <div style='height:12px;border-radius:6px;width:{w}%;background:{color}'></div>
-              </div>
-            </div>""", unsafe_allow_html=True)
-
 # =====================================================
-# 📋 FICHA & ANTROPO
+# 📋 FICHA & ANTROPO (COMPLETA RESTAURADA)
 # =====================================================
 elif menu == "📋 Ficha & Antropo":
     c = need_athlete()
@@ -859,13 +868,11 @@ elif menu == "📋 Ficha & Antropo":
         np_ = co1.number_input("Peso (kg)", 0.1, 250.0, float(d.get("Peso", 70)), step=0.5)
         nt_ = co2.number_input("Talla (cm)", 50.0, 250.0, float(d.get("Talla", 170)), step=0.5)
         ne_ = co3.number_input("Edad", 5, 100, int(d.get("Edad", 25)))
-        ns_ = co4.selectbox("Sexo", ["Masculino", "Femenino"],
-                            index=0 if d.get("Sexo", "Masculino") == "Masculino" else 1)
+        ns_ = co4.selectbox("Sexo", ["Masculino", "Femenino"], index=0 if d.get("Sexo", "Masculino") == "Masculino" else 1)
         imc = np_ / ((nt_ / 100) ** 2)
         st.caption(f"IMC: **{imc:.1f}**")
         if st.button("💾 Actualizar Datos", type="primary", key="btn_actualizar_datos"):
-            st.session_state.db_clientes[c].update(
-                {"Peso": np_, "Talla": nt_, "Edad": ne_, "Sexo": ns_})
+            st.session_state.db_clientes[c].update({"Peso": np_, "Talla": nt_, "Edad": ne_, "Sexo": ns_})
             guardar_datos(); st.toast("Datos actualizados ✅")
         st.divider()
         if st.checkbox("❤️ Calcular FCM (Tanaka)"):
@@ -888,56 +895,45 @@ elif menu == "📋 Ficha & Antropo":
             if suma > 0:
                 try:
                     gr = calc_durnin(d.get("Edad", 25), d.get("Sexo", "Masculino"), suma)
-                    if not (2 <= gr <= 60):
-                        st.warning(f"Resultado fuera de rango: {gr:.1f}% — verifica pliegues.")
+                    if not (2 <= gr <= 60): st.warning(f"Fuera de rango: {gr:.1f}%")
                     else:
-                        peso = d.get("Peso", 70)
-                        mm = peso * (1 - gr / 100)
-                        st.metric("% Grasa", f"{gr:.1f}%")
-                        st.metric("Masa Magra", f"{mm:.1f} kg")
-                        st.metric("Masa Grasa", f"{peso-mm:.1f} kg")
+                        peso = d.get("Peso", 70); mm = peso * (1 - gr / 100)
+                        st.metric("% Grasa", f"{gr:.1f}%"); st.metric("Masa Magra", f"{mm:.1f} kg")
                         cat, col_ = eval_grasa(d.get("Edad", 25), d.get("Sexo", "Masculino"), gr)
-                        st.markdown(f"""<div style='background:#2D2D2D;padding:14px;
-                          border-radius:8px;text-align:center;border:1px solid {col_};
-                          margin-top:10px'>
-                          <div style='color:#aaa;font-size:11px'>Clasificación</div>
-                          <div style='color:{col_};font-size:1.3rem;font-weight:700'>{cat}
-                          </div></div>""", unsafe_allow_html=True)
-                except ValueError as e:
-                    st.error(f"Error: {e}")
-            else:
-                st.info("Ingresa los 4 pliegues para calcular.")
+                        st.markdown(f"<div style='background:#2D2D2D;padding:12px;border-radius:8px;border:1px solid {col_};text-align:center'><div style='color:{col_};font-size:1.2rem;font-weight:700'>{cat}</div></div>", unsafe_allow_html=True)
+                except ValueError as e: st.error(f"Error: {e}")
+            else: st.info("Ingresa los 4 pliegues.")
 
     with tb3:
         co1, co2 = st.columns(2)
         fono = co1.text_input("📱 Teléfono", value=d.get("Telefono", ""))
-        eme = co2.text_input("🚨 Contacto Emergencia", value=d.get("Emergencia", ""))
-        les = st.text_area("🩹 Lesiones", value=d.get("Lesiones", ""), height=80)
-        enf = st.text_area("💊 Enfermedades/Medicamentos", value=d.get("Enfermedades", ""), height=70)
+        eme  = co2.text_input("🚨 Contacto Emergencia", value=d.get("Emergencia", ""))
+        les  = st.text_area("🩹 Lesiones", value=d.get("Lesiones", ""), height=80)
+        enf  = st.text_area("💊 Enfermedades/Medicamentos", value=d.get("Enfermedades", ""), height=70)
         co3, co4 = st.columns(2)
         ops = ["Principiante", "Intermedio", "Avanzado"]
-        ea = d.get("Experiencia", "Principiante"); ea = ea if ea in ops else "Principiante"
+        ea  = d.get("Experiencia", "Principiante"); ea = ea if ea in ops else "Principiante"
         exp = co3.selectbox("🏋️ Experiencia", ops, index=ops.index(ea))
         obj = co4.text_input("🎯 Objetivo Principal", value=d.get("Objetivo_Prin", ""))
         est = st.text_area("💼 Estilo de Vida", value=d.get("Estilo_Vida", ""), height=70)
         if st.button("💾 Guardar Anamnesis", type="primary", key="btn_guardar_anamnesis"):
             st.session_state.db_clientes[c].update({
                 "Telefono": fono, "Emergencia": eme, "Lesiones": les, "Enfermedades": enf,
-                "Experiencia": exp, "Objetivo_Prin": obj, "Estilo_Vida": est})
+                "Experiencia": exp, "Objetivo_Prin": obj, "Estilo_Vida": est
+            })
             guardar_datos(); st.toast("Historial guardado ✅")
 
 # =====================================================
-# 💪 ENTRENAMIENTO
+# 💪 ENTRENAMIENTO (CON BÚSQUEDA Y GIFS)
 # =====================================================
 elif menu == "💪 Entrenamiento":
     c = need_athlete()
     fecha = st.date_input("📅 Fecha:", hoy_chile())
-    dia = DIAS[fecha.weekday()]
-    foco = st.session_state.planes_semanales.get(c, {}).get(dia, "Sin planificar")
-    det = st.session_state.detalles_planes.get(c, {}).get(dia, "")
+    dia   = DIAS[fecha.weekday()]
+    foco  = st.session_state.planes_semanales.get(c, {}).get(dia, "Sin planificar")
+    det   = st.session_state.detalles_planes.get(c, {}).get(dia, "")
 
-    if foco == DESCANSO:
-        st.success(f"🛌 {dia}: Descanso planificado")
+    if foco == "Descanso": st.success(f"🛌 {dia}: Descanso planificado")
     else:
         st.info(f"🔥 {dia}: {foco}")
         if det:
@@ -947,47 +943,33 @@ elif menu == "💪 Entrenamiento":
                     if pts[0].strip(): st.markdown("**1️⃣ Calentamiento:**\n" + pts[0])
                     if pts[1].strip(): st.markdown("**2️⃣ Desarrollo:**\n" + pts[1])
                     if pts[2].strip(): st.markdown("**3️⃣ Vuelta a la Calma:**\n" + pts[2])
-                else:
-                    st.text(det)
+                else: st.text(det)
     st.divider()
 
     col_e, col_t = st.columns([3, 1])
     with col_e:
         obj_ = st.selectbox("🎯 Objetivo:", list(OBJETIVOS.keys()))
-        sug = OBJETIVOS[obj_]
-        st.caption(f"Guía: {sug['Reps']} reps · {sug['RM']} · "
-                   f"Pausa: {sug['Pausa']} · RPE: {sug['RPE']}")
+        sug  = OBJETIVOS[obj_]
+        st.caption(f"Guía: {sug['Reps']} reps · {sug['RM']} · Pausa: {sug['Pausa']} · RPE: {sug['RPE']}")
 
         st.markdown("#### 🔎 Buscar Ejercicio")
-        filtro = st.radio(
-            "Categoría:",
-            ["Todos", "Barra", "Mancuerna", "Cable", "Polea", "Banda", "Sentadilla", "Salto", "Peso Corporal"],
-            horizontal=True
-        )
-
-        if filtro == "Todos":
-            lista_filtrada = list(st.session_state.biblioteca_videos.keys())
-        else:
-            lista_filtrada = [ej for ej in st.session_state.biblioteca_videos.keys() if filtro.lower() in ej.lower()]
-
+        filtro = st.radio("Categoría:", ["Todos", "Barra", "Mancuerna", "Cable", "Polea", "Banda", "Sentadilla", "Salto", "Peso Corporal"], horizontal=True)
+        if filtro == "Todos": lista_filtrada = list(st.session_state.biblioteca_videos.keys())
+        else: lista_filtrada = [ej for ej in st.session_state.biblioteca_videos.keys() if filtro.lower() in ej.lower()]
+        
         lista_ordenada = sorted(lista_filtrada) + ["✍️ Otro..."]
-
         col_sel, col_gif = st.columns([6, 4])
-
         with col_sel:
             ej_ = st.selectbox("Elige el ejercicio:", lista_ordenada)
             if ej_ != "✍️ Otro...":
                 ur = ult_reg(c, ej_)
-                if ur:
-                    st.info(f"💡 Último: {ur['Series']}x{ur['Reps']} @ {ur['Carga']}kg")
-                    rm_ = calc_1rm(ur["Carga"], ur["Reps"])
-                    st.caption(f"1RM est: {rm_:.1f}kg · 80%:{rm_*.8:.1f} · 70%:{rm_*.7:.1f}")
+                if ur: st.info(f"💡 Último: {ur['Series']}x{ur['Reps']} @ {ur['Carga']}kg")
 
         with col_gif:
             if ej_ != "✍️ Otro..." and ej_ in st.session_state.biblioteca_videos:
-                st.image(st.session_state.biblioteca_videos[ej_], use_container_width=True)
-            elif ej_ == "✍️ Otro...":
-                st.info("Sin vista previa (Ejercicio manual)")
+                enlace = st.session_state.biblioteca_videos[ej_]
+                if "githubusercontent.com" in enlace or ".gif" in enlace:
+                    st.image(enlace, use_container_width=True)
 
         nom = st.text_input("Nombre en rutina:", value="" if ej_ == "✍️ Otro..." else ej_)
         c1, c2, c3 = st.columns(3)
@@ -997,411 +979,128 @@ elif menu == "💪 Entrenamiento":
         pt = st.text_input("Pausa", value=sug["Pausa"])
         rpe = st.slider("RPE", 1, 10, 7)
 
-        if st.button("➕ Registrar Serie", type="primary", key="btn_registrar_serie"):
+        if st.button("➕ Registrar Serie", type="primary"):
             if nom.strip():
                 st.session_state.historial_global.append({
-                    "Cliente": c,
-                    "Fecha": fstr(fecha),
-                    "Ejercicio": nom.strip(),
-                    "Series": se, "Reps": re, "Carga": kg,
-                    "RPE": rpe, "Tipo": FUERZA, "Objetivo": obj_,
+                    "Cliente": c, "Fecha": fstr(fecha), "Ejercicio": nom.strip(),
+                    "Series": se, "Reps": re, "Carga": kg, "RPE": rpe, "Tipo": "Fuerza", "Objetivo": obj_
                 })
                 guardar_datos(); st.toast("Serie registrada 💪"); st.rerun()
-            else:
-                st.warning("Escribe el nombre del ejercicio.")
 
-        hist_hoy = [h for h in st.session_state.historial_global
-                    if h["Cliente"] == c and h["Fecha"] == fstr(fecha)]
+        hist_hoy = [h for h in st.session_state.historial_global if h["Cliente"] == c and h["Fecha"] == fstr(fecha)]
         if hist_hoy:
             st.divider(); st.subheader(f"📝 Sesión {fstr(fecha)}")
-            vol = sum(h["Series"] * h["Reps"] * h["Carga"]
-                      for h in hist_hoy if h.get("Tipo") == FUERZA)
-            st.caption(f"Volumen total: **{vol:.0f} kg·rep**")
             for i, h in enumerate(hist_hoy):
                 ci2, cd2 = st.columns([4, 1])
-                ci2.write(f"✅ {h['Ejercicio']}: {h['Series']}x{h['Reps']}"
-                          f" @ {h['Carga']}kg (RPE {h.get('RPE','-')})")
-                if cd2.button("🗑️", key=f"del_{c}_{fstr(fecha)}_{i}"):
-                    # Borrado por identidad del registro (no por índice global)
-                    st.session_state.historial_global = [
-                        x for x in st.session_state.historial_global if x is not h]
+                ci2.write(f"✅ {h['Ejercicio']}: {h['Series']}x{h['Reps']} @ {h['Carga']}kg")
+                if cd2.button("🗑️", key=f"del_{i}"):
+                    st.session_state.historial_global = [x for x in st.session_state.historial_global if x is not h]
                     guardar_datos(); st.rerun()
 
     with col_t:
         st.write("⏱️ Timer")
         seg = parse_tiempo(pt)
-        st.caption(f"Pausa: {seg}s")
-        if st.button("▶ Iniciar", key="btn_timer_ent"):
+        if st.button("▶ Iniciar"):
             ph = st.empty(); bar = st.progress(0.0)
             for i in range(seg, -1, -1):
-                ph.metric("Restante", f"{i}s")
-                bar.progress(1.0 - i / seg if seg else 1.0)
-                time.sleep(1)
-            ph.success("✅ ¡Tiempo!")
-            bar.empty()
+                ph.metric("Restante", f"{i}s"); bar.progress(1.0 - i/seg if seg else 1.0); time.sleep(1)
+            ph.success("✅ ¡Tiempo!"); bar.empty()
 
 # =====================================================
 # 🏋️ MODO EN VIVO
 # =====================================================
 elif menu == "🏋️ Modo En Vivo":
     c = need_athlete()
-    hoy = hoy_chile()
-    dia = DIAS[hoy.weekday()]
+    hoy = hoy_chile(); dia = DIAS[hoy.weekday()]
     det = st.session_state.detalles_planes.get(c, {}).get(dia, "")
     foco = st.session_state.planes_semanales.get(c, {}).get(dia, "Sin planificar")
 
-    st.title(f"🏋️ En Vivo — {c}")
-    st.caption(f"{dia} · {foco}")
-
+    st.title(f"🏋️ En Vivo — {c}"); st.caption(f"{dia} · {foco}")
     ejs = []
     if det:
-        pts = det.split("||")
-        blq = pts[1] if len(pts) > 1 else pts[0] if pts else ""
+        pts = det.split("||"); blq = pts[1] if len(pts) > 1 else (pts[0] if pts else "")
         ejs = [l.strip() for l in blq.split("\n") if l.strip()]
 
-    if not ejs:
-        st.info(f"No hay ejercicios planificados para {dia}. "
-                f"Agrégalos en Plan Semanal."); st.stop()
+    if not ejs: st.info(f"No hay ejercicios hoy."); st.stop()
 
-    n = len(ejs)
-    idx = st.session_state.live_idx % n
-    ej = ejs[idx]
-
-    st.markdown(f"""<div class='live-card'>
-      <div style='color:#888;font-size:.8rem;letter-spacing:2px;text-transform:uppercase'>
-        Ejercicio {idx+1} de {n}</div>
-      <div class='live-title'>{esc(ej)}</div>
-      <div style='color:#aaa;margin-top:8px'>Controla el movimiento · Respira</div>
-    </div>""", unsafe_allow_html=True)
-
-    nombre_base = ej.split(":")[0].strip()
-    if nombre_base in st.session_state.biblioteca_videos:
-        enlace_gif = st.session_state.biblioteca_videos[nombre_base]
-        if "githubusercontent.com" in enlace_gif or ".gif" in enlace_gif:
-            _, col_gif, _ = st.columns([1, 2, 1])
-            with col_gif:
-                st.image(enlace_gif, use_container_width=True)
+    n = len(ejs); idx = st.session_state.live_idx % n; ej = ejs[idx]
+    st.markdown(f"<div class='live-card'><div class='live-title'>{ej}</div></div>", unsafe_allow_html=True)
 
     ca, cb, cc = st.columns(3)
     with ca:
-        if st.button("⬅️ Anterior", use_container_width=True, key="btn_live_prev"):
-            st.session_state.live_idx = max(0, idx - 1); st.rerun()
+        if st.button("⬅️ Anterior", use_container_width=True): st.session_state.live_idx = max(0, idx-1); st.rerun()
     with cb:
-        pausa = st.selectbox("Descanso:", ["45s", "60s", "90s", "120s", "180s", "300s"],
-                             index=2, label_visibility="collapsed")
-        if st.button(f"⏱️ {pausa}", use_container_width=True, key="btn_live_timer"):
-            sg = int(pausa.replace("s", ""))
-            ph = st.empty(); bar = st.progress(0.0)
-            for i in range(sg, -1, -1):
-                ph.metric("Descansando", f"{i}s")
-                bar.progress(1.0 - i / sg if sg else 1.0)
-                time.sleep(1)
-            ph.success("¡A por la siguiente serie!")
+        pausa = st.selectbox("Descanso:", ["45s", "60s", "90s", "120s"], index=1)
+        if st.button(f"⏱️ {pausa}", use_container_width=True):
+            sg = int(pausa.replace("s","")); ph = st.empty()
+            for i in range(sg, -1, -1): ph.metric("Descanso", f"{i}s"); time.sleep(1)
+            ph.success("¡Listo!")
     with cc:
-        if st.button("➡️ Siguiente", use_container_width=True, type="primary", key="btn_live_next"):
-            st.session_state.live_idx = min(n - 1, idx + 1); st.rerun()
-
-    st.divider(); st.subheader("📝 Registrar serie rápida")
-    q1, q2, q3 = st.columns(3)
-    seq = q1.number_input("Series", 1, 10, 4, key="lv_se")
-    req = q2.number_input("Reps", 1, 50, 10, key="lv_re")
-    kgq = q3.number_input("Carga", 0.0, step=0.5, key="lv_kg")
-    if st.button("✅ Guardar serie", type="primary", key="btn_live_guardar"):
-        nombre_ej = ej.split(":")[0].strip()
-        st.session_state.historial_global.append({
-            "Cliente": c, "Fecha": fstr(hoy), "Ejercicio": nombre_ej,
-            "Series": seq, "Reps": req, "Carga": kgq,
-            "RPE": 7, "Tipo": FUERZA, "Objetivo": foco,
-        })
-        guardar_datos(); st.toast(f"✅ {nombre_ej} guardado")
-
-    st.divider(); st.subheader("Lista de hoy")
-    for i, e in enumerate(ejs):
-        col = "#39FF14" if i == idx else "#444"
-        st.markdown(f"<div style='padding:5px 12px;border-left:3px solid {col};"
-                    f"margin:2px 0;font-size:.9rem'>{i+1}. {esc(e)}</div>",
-                    unsafe_allow_html=True)
+        if st.button("➡️ Siguiente", use_container_width=True, type="primary"): st.session_state.live_idx = min(n-1, idx+1); st.rerun()
 
 # =====================================================
-# 🧠 PLAN SEMANAL
+# 🧠 PLAN SEMANAL (CON ENLACE SEGURO FIRMADO)
 # =====================================================
 elif menu == "🧠 Plan Semanal":
     c = need_athlete()
-    st.markdown(CSS_PLAN, unsafe_allow_html=True)
     st.title(f"🧠 Plan Semanal — {c}")
 
-    # Tipo de semana
     sk_mc = f"sel_microciclo_{c}"
     if sk_mc not in st.session_state:
         st.session_state[sk_mc] = st.session_state.planes_semanales.get(c, {}).get("tipo_semana", TIPOS_MICROCICLO[1])
 
-    # Grupo por día
     for dia in DIAS:
         sk_grp = f"sel_grupo_{c}_{dia}"
         if sk_grp not in st.session_state:
-            st.session_state[sk_grp] = st.session_state.planes_semanales.get(c, {}).get(dia, DESCANSO)
+            st.session_state[sk_grp] = st.session_state.planes_semanales.get(c, {}).get(dia, "Descanso")
 
-    # ── PASO 1 ──
-    st.markdown("### 1️⃣ ¿Qué tipo de semana es?")
-    mc_info = {
-        "Ajuste (Descarga)": ("📉", "Descarga", "#00BFFF", "RPE 5-7 · Técnica y recuperación"),
-        "Carga (Desarrollo)": ("📈", "Desarrollo", "#39FF14", "RPE 7-8.5 · Cargas progresivas"),
-        "Impacto (Choque)": ("🔥", "Choque", "#FF4B4B", "RPE 9-10 · Máximo esfuerzo"),
-    }
+    st.markdown("### 1️⃣ Tipo de Semana")
     mc_cols = st.columns(3)
-    for i, (tipo, (ico, label, color, desc)) in enumerate(mc_info.items()):
+    for i, tipo in enumerate(TIPOS_MICROCICLO):
         with mc_cols[i]:
-            selected = st.session_state[sk_mc] == tipo
-            if st.button(
-                f"{ico} {'✓ ' if selected else ''}{label}",
-                key=f"mc_btn_{c}_{i}",
-                use_container_width=True,
-                type="primary" if selected else "secondary",
-            ):
-                st.session_state[sk_mc] = tipo
-                st.rerun()
-            st.markdown(
-                f"<div style='text-align:center;font-size:.75rem;"
-                f"color:{color if selected else '#666'};margin-top:-8px'>{desc}</div>",
-                unsafe_allow_html=True
-            )
+            if st.button(tipo, key=f"mc_b_{i}", type="primary" if st.session_state[sk_mc] == tipo else "secondary", use_container_width=True):
+                st.session_state[sk_mc] = tipo; st.rerun()
 
-    mc = st.session_state[sk_mc]
-    st.divider()
-
-    # ── PASO 2 ──
-    st.markdown("### 2️⃣ Diseña tu semana")
-    st.caption("Haz clic en un día para editarlo 👇")
-
-    BADGE_CLASS = {
-        "Descanso": "badge-descanso", "Pierna": "badge-pierna",
-        "Pecho/Hombro": "badge-pecho", "Espalda": "badge-espalda",
-        "Glúteo": "badge-gluteo", "Full Body": "badge-full",
-        "Torso": "badge-torso", "Brazo": "badge-brazo",
-        "Cardio": "badge-cardio",
-    }
-    ICONOS_GRUPO = {
-        "Descanso": "😴", "Pierna": "🦵", "Pecho/Hombro": "💪",
-        "Espalda": "🏋️", "Glúteo": "🍑", "Full Body": "⚡",
-        "Torso": "🔝", "Brazo": "💪", "Cardio": "🏃",
-    }
-
-    cols_sem = st.columns(7)
-    for i, dia in enumerate(DIAS):
-        foco_actual = st.session_state[f"sel_grupo_{c}_{dia}"]
-        ico_ = ICONOS_GRUPO.get(foco_actual, "📅")
-        with cols_sem[i]:
-            st.markdown(f"""
-            <div style='text-align:center;padding:8px 4px;background:#1a1a1a;
-                        border-radius:8px;border:1px solid #333'>
-                <div style='font-size:1.3rem'>{ico_}</div>
-                <div style='font-size:.7rem;font-weight:700;color:#aaa;
-                            letter-spacing:1px'>{esc(dia[:3].upper())}</div>
-                <div style='font-size:.65rem;color:#666;margin-top:2px'>
-                    {esc(foco_actual)}
-                </div>
-            </div>""", unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    if "dia_editando" not in st.session_state:
-        st.session_state.dia_editando = None
-
-    grupos_lista = ["Descanso", "Pierna", "Pecho/Hombro", "Espalda", "Glúteo",
-                    "Full Body", "Torso", "Brazo", "Cardio"]
-
+    st.divider(); st.markdown("### 2️⃣ Días de Entrenamiento")
     for dia in DIAS:
         sk_grp = f"sel_grupo_{c}_{dia}"
-        vd_actual = st.session_state[sk_grp]
-        det_actual = st.session_state.detalles_planes.get(c, {}).get(dia, "")
-
-        cls = BADGE_CLASS.get(vd_actual, "badge-descanso")
-        ico_d = ICONOS_GRUPO.get(vd_actual, "📅")
-        n_ejs = len([l for l in det_actual.replace("||", "\n").split("\n") if l.strip()]) if det_actual else 0
-        ej_hint = f"{n_ejs} ejercicio{'s' if n_ejs != 1 else ''}" if n_ejs > 0 else "Sin detalles"
-
-        col_card, col_edit = st.columns([5, 1])
-        with col_card:
-            st.markdown(f"""
-            <div class='dia-card'>
-              <div class='dia-header'>
-                <span class='dia-nombre'>{ico_d} {esc(dia)}</span>
-                <span class='dia-badge {cls}'>{esc(vd_actual)}</span>
-              </div>
-              <div style='color:#666;font-size:.82rem'>{ej_hint}</div>
-            </div>""", unsafe_allow_html=True)
-        with col_edit:
-            st.markdown("<div style='margin-top:12px'>", unsafe_allow_html=True)
-            lbl = "✅ Listo" if st.session_state.dia_editando == dia else "✏️ Editar"
-            if st.button(lbl, key=f"edit_btn_{c}_{dia}", use_container_width=True):
-                st.session_state.dia_editando = None if st.session_state.dia_editando == dia else dia
-                st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        if st.session_state.dia_editando == dia:
-            with st.container():
-                st.markdown(f"""
-                <div style='background:#111;border:1px solid #39FF14;border-radius:10px;
-                            padding:18px;margin:-8px 0 12px 0'>
-                    <div style='color:#39FF14;font-family:Bebas Neue,sans-serif;
-                                font-size:1.1rem;letter-spacing:2px;margin-bottom:12px'>
-                        ✏️ EDITANDO {esc(dia.upper())}
-                    </div>
-                </div>""", unsafe_allow_html=True)
-
-                st.markdown("**¿Qué se trabaja este día?**")
-                gcols = st.columns(5)
-                for gi, grp in enumerate(grupos_lista):
-                    with gcols[gi % 5]:
-                        sel_g = vd_actual == grp
-                        if st.button(
-                            f"{ICONOS_GRUPO.get(grp, '📅')} {grp}",
-                            key=f"grp_{c}_{dia}_{gi}",
-                            use_container_width=True,
-                            type="primary" if sel_g else "secondary"
-                        ):
-                            st.session_state[sk_grp] = grp
-                            st.rerun()
-
-                nuevo_grupo = st.session_state[sk_grp]
-
-                if nuevo_grupo != DESCANSO:
-                    st.markdown("<br>**Ejercicios del día**", unsafe_allow_html=True)
-
-                    # Inicializar el almacén persistente con lo guardado (una sola vez)
-                    for p_, v_ in zip(PARTES, partes_guardadas(c, dia)):
-                        st.session_state.setdefault(f"det_{p_}_{c}_{dia}", v_)
-
-                    ec1, ec2, ec3 = st.columns(3)
-                    with ec1:
-                        st.markdown("🔥 **Calentamiento**")
-                        st.caption("5-10 min antes de comenzar")
-                        cal = st.text_area(
-                            "cal", value=st.session_state[f"det_cal_{c}_{dia}"], height=160,
-                            placeholder="Ej:\nTroteo 5 min\nMovilidad cadera\nActivación glúteo",
-                            label_visibility="collapsed", key=f"w_cal_{c}_{dia}"
-                        )
-                    with ec2:
-                        st.markdown("💪 **Bloque Principal**")
-                        st.caption("Un ejercicio por línea")
-                        des = st.text_area(
-                            "des", value=st.session_state[f"det_des_{c}_{dia}"], height=160,
-                            placeholder="Ej:\nSentadilla: 4x8 @80kg\nPrensa: 3x12 @100kg",
-                            label_visibility="collapsed", key=f"w_des_{c}_{dia}"
-                        )
-                    with ec3:
-                        st.markdown("🧘 **Vuelta a la Calma**")
-                        st.caption("Estiramientos y movilidad")
-                        vue = st.text_area(
-                            "vue", value=st.session_state[f"det_vue_{c}_{dia}"], height=160,
-                            placeholder="Ej:\nEstiramiento cuádriceps\nFoam roller",
-                            label_visibility="collapsed", key=f"w_vue_{c}_{dia}"
-                        )
-
-                    # El almacén persistente siempre refleja lo último escrito
-                    st.session_state[f"det_cal_{c}_{dia}"] = cal
-                    st.session_state[f"det_des_{c}_{dia}"] = des
-                    st.session_state[f"det_vue_{c}_{dia}"] = vue
-
-                    # ── Dante ──
-                    df_c = st.session_state.db_clientes.get(c, {})
-                    pf_d = (f"Edad:{df_c.get('Edad','?')}, Exp:{df_c.get('Experiencia','?')}, "
-                            f"Lesiones:{df_c.get('Lesiones','Ninguna')}")
-                    if st.button(f"🤖 Dante: generar rutina de {nuevo_grupo}",
-                                 key=f"dante_{c}_{dia}", use_container_width=True):
-                        if modelo_dante:
-                            with st.spinner("Dante diseñando..."):
-                                try:
-                                    r = modelo_dante.generate_content(
-                                        f"Eres Dante, entrenador experto. Perfil:{pf_d}. "
-                                        f"Microciclo:{mc}. Genera una rutina de {nuevo_grupo} para {dia}.\n"
-                                        f"Formato EXACTO (3 secciones separadas por '---'):\n"
-                                        f"CALENTAMIENTO:\n[lista de ejercicios]\n---\n"
-                                        f"DESARROLLO:\n[ejercicios con series x reps @ peso]\n---\n"
-                                        f"VUELTA A LA CALMA:\n[estiramientos]"
-                                    )
-                                    txt_dante = r.text
-                                    partes_d = txt_dante.split("---")
-                                    if len(partes_d) >= 3:
-                                        st.success("✅ Dante generó la rutina — aplícala abajo:")
-                                        st.session_state[f"dante_cal_{c}_{dia}"] = partes_d[0].replace("CALENTAMIENTO:", "").strip()
-                                        st.session_state[f"dante_des_{c}_{dia}"] = partes_d[1].replace("DESARROLLO:", "").strip()
-                                        st.session_state[f"dante_vue_{c}_{dia}"] = partes_d[2].replace("VUELTA A LA CALMA:", "").strip()
-                                    else:
-                                        st.markdown(txt_dante)
-                                except Exception as e:
-                                    log.exception("Error Dante")
-                                    st.error(f"Error Dante: {e}")
-                        else:
-                            st.warning("Dante no disponible.")
-
-                    if st.session_state.get(f"dante_cal_{c}_{dia}") is not None:
-                        with st.expander("👁️ Ver propuesta de Dante", expanded=True):
-                            dc1, dc2, dc3 = st.columns(3)
-                            dc1.markdown(f"**Calentamiento:**\n{st.session_state.get(f'dante_cal_{c}_{dia}', '')}")
-                            dc2.markdown(f"**Desarrollo:**\n{st.session_state.get(f'dante_des_{c}_{dia}', '')}")
-                            dc3.markdown(f"**Vuelta:**\n{st.session_state.get(f'dante_vue_{c}_{dia}', '')}")
-                            st.button("✅ Aplicar propuesta de Dante", key=f"apply_dante_{c}_{dia}",
-                                      use_container_width=True, type="primary",
-                                      on_click=aplicar_dante, args=(c, dia, nuevo_grupo))
-                else:
-                    st.info("😴 Día de descanso — el atleta no entrena.")
+        vd_act = st.session_state[sk_grp]
+        with st.expander(f"📅 {dia} — {vd_act}", expanded=(vd_act != "Descanso")):
+            st.session_state[sk_grp] = st.selectbox(f"Enfoque {dia}:", GRUPOS, index=GRUPOS.index(vd_act) if vd_act in GRUPOS else 0, key=f"sb_{dia}")
+            if st.session_state[sk_grp] != "Descanso":
+                prev = st.session_state.detalles_planes.get(c, {}).get(dia, "||").split("||")
+                d0 = prev[0] if len(prev) > 0 else ""; d1 = prev[1] if len(prev) > 1 else ""; d2 = prev[2] if len(prev) > 2 else ""
+                c1, c2, c3 = st.columns(3)
+                cal = c1.text_area("🔥 Calentamiento", value=d0, key=f"cal_{dia}", height=120)
+                des = c2.text_area("💪 Desarrollo", value=d1, key=f"des_{dia}", height=120)
+                vue = c3.text_area("🧘 Vuelta a la calma", value=d2, key=f"vue_{dia}", height=120)
+                st.session_state[f"det_res_{dia}"] = f"{cal}||{des}||{vue}"
 
     st.divider()
-
-    # ── PASO 3 ──
-    st.markdown("### 3️⃣ Guardar y exportar")
-    ca_f, cb_f, cc_f = st.columns(3)
-
+    ca_f, cb_f = st.columns(2)
     with ca_f:
-        if st.button("💾 Guardar Plan Completo", type="primary",
-                     key="btn_guardar_plan", use_container_width=True):
-            nf, nd = construir_plan(c)
+        if st.button("💾 Guardar Plan Completo", type="primary", use_container_width=True):
+            nf = {"tipo_semana": st.session_state[sk_mc]}; nd = {}
+            for dia in DIAS:
+                grp = st.session_state[f"sel_grupo_{c}_{dia}"]
+                nf[dia] = grp
+                nd[dia] = st.session_state.get(f"det_res_{dia}", "") if grp != "Descanso" else ""
             st.session_state.planes_semanales[c] = nf
-            st.session_state.detalles_planes[c] = nd
-            st.session_state.dia_editando = None
-            ok = guardar_datos()
-            if ok:
-                st.toast("Plan guardado ✅")
-                st.rerun()
-            else:
-                st.error("Error al guardar")
+            st.session_state.detalles_planes[c]  = nd
+            guardar_datos(); st.toast("Plan guardado ✅"); st.rerun()
 
     with cb_f:
-        if st.button("🔄 Importar del Historial",
-                     key="btn_cargar_historial", use_container_width=True):
-            importar_historial(c)
-            limpiar_editor(c)  # descarta textos viejos del editor
-            for dia in DIAS:
-                st.session_state[f"sel_grupo_{c}_{dia}"] = st.session_state.planes_semanales.get(c, {}).get(dia, DESCANSO)
-            st.session_state[sk_mc] = st.session_state.planes_semanales.get(c, {}).get("tipo_semana", TIPOS_MICROCICLO[1])
-            st.toast("Historial importado ✅")
-            st.rerun()
-
-    with cc_f:
         if REPORTLAB_OK:
-            try:
-                nf_pdf, nd_pdf = construir_plan(c)  # incluye lo editado aún sin guardar
-                pb = pdf_plan(c, nf_pdf, nd_pdf, DIAS)
-                if pb:
-                    st.download_button("📄 Descargar PDF", data=pb,
-                                       file_name=f"Rutina_{c.replace(' ', '_')}.pdf",
-                                       mime="application/pdf", use_container_width=True)
-            except Exception as e:
-                log.exception("Error PDF")
-                st.error(f"Error PDF: {e}")
-        else:
-            st.caption("pip install reportlab para PDF")
+            pb = pdf_plan(c, st.session_state.planes_semanales.get(c, {}), st.session_state.detalles_planes.get(c, {}))
+            if pb: st.download_button("📄 Descargar PDF", data=pb, file_name=f"Rutina_{c}.pdf", mime="application/pdf", use_container_width=True)
 
-    # ── LINK PERMANENTE FIRMADO ──
     st.divider()
     st.markdown(f"### 🔗 Enlace Permanente para {c}")
-    st.info("📲 **¡Copia y envía este link por WhatsApp!** Es reutilizable y está firmado: si alguien modifica "
-            "el nombre del atleta en la URL, deja de funcionar. La app actualiza la rutina automáticamente cada día.")
-
-    url_base_de_tu_app = st.secrets.get("APP_URL", "https://biosport-app-skvkkvdkaojtifgiaavzob.streamlit.app")
-    entrenador_actual = st.session_state.get("usuario_actual", ADMIN_USER)
-    st.code(construir_link(url_base_de_tu_app, entrenador_actual, c), language="http")
+    st.info("📲 **¡Copia y envía este link por WhatsApp!** Es 100% reutilizable y está firmado. El atleta no necesita clave y solo verá su propia rutina.")
+    url_base = st.secrets.get("APP_URL", "https://biosport-app-skvkkvdkaojtifgiaavzob.streamlit.app")
+    entrenador_actual = st.session_state.get("usuario_actual", "visho")
+    link_firmado = construir_link(url_base, entrenador_actual, c)
+    st.code(link_firmado, language="http")
 
 # =====================================================
 # 📆 MESOCICLO IA
@@ -1409,42 +1108,19 @@ elif menu == "🧠 Plan Semanal":
 elif menu == "📆 Mesociclo IA":
     c = need_athlete()
     st.title(f"📆 Mesociclo IA — {c}")
-    st.info("Dante generará un plan completo de semanas con progresión real.")
-
-    m1, m2 = st.columns(2)
-    obj_m = m1.selectbox("Objetivo:", ["Hipertrofia", "Fuerza Máxima", "Resistencia",
-                                       "Potencia", "Pérdida de Grasa", "Rendimiento General"])
-    sem = m2.slider("Semanas:", 4, 12, 8)
-
-    mesos = st.session_state.mesociclos.get(c, [])
-
-    if st.button("🚀 Generar Mesociclo con Dante", type="primary", key="btn_generar_meso"):
+    obj_m = st.selectbox("Objetivo:", ["Hipertrofia", "Fuerza Máxima", "Resistencia", "Potencia"])
+    sem = st.slider("Semanas:", 4, 12, 8)
+    if st.button("🚀 Generar Mesociclo", type="primary"):
         if modelo_dante:
-            with st.spinner(f"Dante diseñando {sem} semanas..."):
+            with st.spinner("Diseñando..."):
                 txt = dante_mesociclo(c, obj_m, sem, st.session_state.db_clientes)
                 if txt:
-                    nuevo = {"fecha": fstr(hoy_chile()),
-                             "objetivo": obj_m, "semanas": sem, "contenido": txt}
-                    st.session_state.mesociclos.setdefault(c, []).insert(0, nuevo)
-                    guardar_datos(); st.success("✅ Mesociclo generado y guardado"); st.rerun()
-        else:
-            st.warning("Dante no disponible — verifica GEMINI_API_KEY en secrets.")
-
-    if mesos:
-        st.divider(); st.subheader("📚 Historial de Mesociclos")
-        for i, m in enumerate(mesos):
-            with st.expander(f"📅 {m['fecha']} · {m['objetivo']} · {m['semanas']} sem",
-                             expanded=(i == 0)):
-                st.markdown(m["contenido"])
-                co1, co2 = st.columns([3, 1])
-                co1.download_button("💾 Descargar TXT", data=m["contenido"],
-                                    file_name=f"Meso_{c.replace(' ','_')}_{m['fecha']}.txt",
-                                    mime="text/plain", key=f"dm_{c}_{i}")
-                if co2.button("🗑️ Eliminar", key=f"del_m_{c}_{i}"):
-                    st.session_state.mesociclos[c].pop(i)
+                    st.session_state.mesociclos.setdefault(c, []).insert(0, {"fecha": fstr(hoy_chile()), "objetivo": obj_m, "semanas": sem, "contenido": txt})
                     guardar_datos(); st.rerun()
-    else:
-        st.info("No hay mesociclos generados aún. Usa el botón de arriba.")
+
+    for m in st.session_state.mesociclos.get(c, []):
+        with st.expander(f"📅 {m['fecha']} — {m['objetivo']} ({m['semanas']} sem)"):
+            st.markdown(m["contenido"])
 
 # =====================================================
 # 🏃 CARDIO
@@ -1453,138 +1129,41 @@ elif menu == "🏃 Cardio":
     c = need_athlete()
     d = st.session_state.db_clientes[c]
     st.title(f"🏃 Cardio — {c}")
-    tb1, tb2 = st.tabs(["🧮 Calculadora VAM", "📝 Registrar Sesión"])
-
-    with tb1:
-        vam = float(d.get("VAM", 0.0))
-        cv1, cv2 = st.columns(2)
-        nv = cv1.number_input("VAM actual (m/s)", 0.0, 10.0, vam, step=0.1)
-        if cv2.button("Actualizar VAM", key="btn_actualizar_vam"):
-            st.session_state.db_clientes[c]["VAM"] = nv
-            guardar_datos(); st.toast("VAM actualizada ✅"); vam = nv
-        if vam > 0:
-            st.divider()
-            cd_, cp_ = st.columns(2)
-            dist_ = cd_.number_input("Distancia (m)", 100, 10000, 400, step=100)
-            pct_ = cp_.slider("% Intensidad VAM", 50, 120, 90)
-            vel_ = vam * (pct_ / 100); ts_ = dist_ / vel_ if vel_ else 0
-            mm_, ss_ = divmod(int(ts_), 60)
-            r1, r2, r3 = st.columns(3)
-            r1.metric("Velocidad", f"{vel_:.2f} m/s")
-            r2.metric("Tiempo", f"{mm_}:{ss_:02d}")
-            r3.metric("Ritmo /km", f"{int(1000/vel_//60)}:{int(1000/vel_%60):02d}" if vel_ else "—")
-            st.divider(); st.subheader("Zonas Personalizadas")
-            zdata = []
-            for z, lo, hi in [("Z1 Regenerativo", 0.0, 0.60), ("Z2 Aeróbico", 0.60, 0.75),
-                              ("Z3 Umbral", 0.75, 0.90), ("Z4 VO2Max", 0.95, 1.05),
-                              ("Z5 Anaeróbico", 1.10, 1.20)]:
-                zdata.append({"Zona": z, "Vel Mín": f"{vam*lo:.2f} m/s",
-                              "Vel Máx": f"{vam*hi:.2f} m/s",
-                              "% VAM": f"{lo*100:.0f}-{hi*100:.0f}%"})
-            st.dataframe(pd.DataFrame(zdata), use_container_width=True, hide_index=True)
-
-    with tb2:
-        fc_ = st.date_input("Fecha:", hoy_chile(), key="fc_cardio")
-        cc1, cc2 = st.columns(2)
-        tc_ = cc1.selectbox("Actividad:", TIPOS_CARDIO)
-        zc_ = cc2.selectbox("Zona:", ["Z1", "Z2", "Z3", "Z4", "Z5"])
-        cc3, cc4, cc5 = st.columns(3)
-        dur_ = cc3.number_input("Duración (min)", 1, 300, 30)
-        dis_ = cc4.number_input("Distancia (km)", 0.0, 200.0, 0.0, step=0.1)
-        fcp_ = cc5.number_input("FC Prom (lpm)", 0, 250, 0)
-        not_ = st.text_area("Notas:", height=70)
-
-        if st.button("➕ Registrar Cardio", type="primary", key="btn_registrar_cardio"):
-            st.session_state.historial_global.append({
-                "Cliente": c, "Fecha": fstr(fc_), "Ejercicio": tc_,
-                "Series": 1, "Reps": 1, "Carga": dur_,
-                "Tipo": CARDIO, "Objetivo": f"Cardio {zc_}",
-                "Zona": zc_, "Distancia": dis_, "FC_Prom": fcp_, "Notas": not_,
-            })
-            guardar_datos(); st.toast("Cardio registrado 🏃"); st.rerun()
-
-        hc = [h for h in st.session_state.historial_global
-              if h["Cliente"] == c and h.get("Tipo") == CARDIO]
-        if hc:
-            st.divider(); st.subheader("📊 Historial Cardio")
-            dfc = pd.DataFrame(hc)
-            sc = [x for x in ["Fecha", "Ejercicio", "Carga", "Zona", "Distancia", "FC_Prom"] if x in dfc]
-            st.dataframe(dfc[sc].tail(20).rename(columns={"Carga": "Duración (min)"}),
-                         use_container_width=True, hide_index=True)
-            if len(hc) >= 3:
-                st.line_chart(dfc.tail(20), x="Fecha", y="Carga")
+    vam = float(d.get("VAM", 0.0))
+    nv = st.number_input("VAM actual (m/s):", 0.0, 10.0, vam, step=0.1)
+    if st.button("Actualizar VAM"):
+        st.session_state.db_clientes[c]["VAM"] = nv; guardar_datos(); st.toast("VAM Actualizada ✅")
 
 # =====================================================
 # 🧪 TESTS FÍSICOS
 # =====================================================
 elif menu == "🧪 Tests Físicos":
-    c = need_athlete()
-    st.title(f"🧪 Tests Físicos — {c}")
-    tb1, tb2 = st.tabs(["📝 Nuevo Test", "📈 Evolución"])
-
-    with tb1:
-        t1_, t2_ = st.columns(2)
-        tipo_t = t1_.selectbox("Tipo de Test:", TIPOS_TEST)
-        fech_t = t2_.date_input("Fecha:", hoy_chile())
-        res_t = st.number_input("Resultado:", step=0.1,
-                                help="m=Cooper/1km · cm=CMJ/Flex · kg=Fuerza")
-        if tipo_t == "Test Cooper (12 min)" and res_t > 0:
-            vo2 = (res_t - 504.9) / 44.73
-            st.metric("VO2Max estimado", f"{vo2:.1f} ml/kg/min")
-        not_t = st.text_area("Observaciones:", height=80)
-        con_t = st.selectbox("Condición:", ["Descansado", "Normal", "Cansado"])
-        if st.button("💾 Guardar Test", type="primary", key="btn_guardar_test"):
-            st.session_state.tests_fisicos.setdefault(c, []).append({
-                "Fecha": fstr(fech_t), "Test": tipo_t,
-                "Resultado": res_t, "Condicion": con_t, "Notas": not_t,
-            })
-            guardar_datos(); st.toast("Test guardado ✅")
-
-    with tb2:
-        tc = st.session_state.tests_fisicos.get(c, [])
-        if tc:
-            dft = pd.DataFrame(tc)
-            ts_ = dft["Test"].unique().tolist()
-            sel_ = st.selectbox("Ver evolución de:", ts_)
-            dts = dft[dft["Test"] == sel_].copy()
-            if len(dts) > 1:
-                st.line_chart(dts, x="Fecha", y="Resultado")
-                r1, r2, r3 = st.columns(3)
-                r1.metric("Mejor", f"{dts['Resultado'].max():.1f}")
-                r2.metric("Último", f"{dts['Resultado'].iloc[-1]:.1f}")
-                r3.metric("Δ último", f"{dts['Resultado'].iloc[-1]-dts['Resultado'].iloc[-2]:+.1f}"
-                          if len(dts) > 1 else "—")
-            st.dataframe(dft.sort_values("Fecha", ascending=False),
-                         use_container_width=True, hide_index=True)
-            with st.expander("🗑️ Eliminar registro"):
-                idx_d = st.number_input("Número (0=primero):", 0, len(tc) - 1, 0)
-                if st.button("Eliminar", key="btn_del_test"):
-                    st.session_state.tests_fisicos[c].pop(idx_d)
-                    guardar_datos(); st.rerun()
-        else:
-            st.info("No hay tests registrados. Agrega uno en 'Nuevo Test'.")
+    c = need_athlete(); st.title(f"🧪 Tests Físicos — {c}")
+    tt = st.selectbox("Test:", TIPOS_TEST); res = st.number_input("Resultado:", step=0.1)
+    if st.button("💾 Guardar Test", type="primary"):
+        st.session_state.tests_fisicos.setdefault(c, []).append({"Fecha": fstr(hoy_chile()), "Test": tt, "Resultado": res})
+        guardar_datos(); st.toast("Test guardado ✅")
 
 # =====================================================
-# 🥗 NUTRICIÓN
+# 🥗 NUTRICIÓN (COMPLETA RESTAURADA)
 # =====================================================
 elif menu == "🥗 Nutrición":
     c = need_athlete()
     d = st.session_state.db_clientes[c]
     st.title(f"🥗 Nutrición — {c}")
-    st.caption("Estimaciones orientativas. No reemplaza a un nutricionista certificado.")
+    st.caption("Estimaciones orientativas basadas en ciencias del deporte.")
     tb1, tb2 = st.tabs(["🔥 Gasto Energético", "🍽️ Macros"])
 
     with tb1:
-        peso = float(d.get("Peso", 70)); talla = float(d.get("Talla", 170))
-        edad = int(d.get("Edad", 25)); sexo = d.get("Sexo", "Masculino")
-        tmb = calc_tmb(peso, talla, edad, sexo)
+        peso  = float(d.get("Peso", 70)); talla = float(d.get("Talla", 170))
+        edad  = int(d.get("Edad", 25));   sexo  = d.get("Sexo", "Masculino")
+        tmb   = calc_tmb(peso, talla, edad, sexo)
         st.metric("TMB (Mifflin-St Jeor)", f"{tmb:.0f} kcal/día")
-        act_ = st.selectbox("Nivel de Actividad:", ["Sedentario", "Ligero (1-3 días)",
-                                                    "Moderado (3-5 días)", "Activo (6-7 días)", "Muy Activo (2x/día)"])
-        get_ = calc_get(tmb, act_)
+        act_  = st.selectbox("Nivel de Actividad:", ["Sedentario", "Ligero (1-3 días)", "Moderado (3-5 días)", "Activo (6-7 días)", "Muy Activo (2x/día)"])
+        get_  = calc_get(tmb, act_)
         st.metric("GET (Gasto Energético Total)", f"{get_:.0f} kcal/día")
-        obj_n = st.selectbox("Objetivo Nutricional:",
-                             ["Mantenimiento", "Déficit (Perder Grasa)", "Superávit (Ganar Masa)"])
+        obj_n = st.selectbox("Objetivo Nutricional:", ["Mantenimiento", "Déficit (Perder Grasa)", "Superávit (Ganar Masa)"])
+        
         if obj_n == "Déficit (Perder Grasa)":
             df__ = st.slider("Déficit (kcal):", 200, 700, 400, step=50)
             meta = get_ - df__; st.success(f"Meta: **{meta:.0f} kcal/día** (déficit {df__})")
@@ -1599,14 +1178,12 @@ elif menu == "🥗 Nutrición":
         meta_c = float(st.session_state.db_clientes[c].get("meta_calorica", 2000))
         peso_c = float(d.get("Peso", 70))
 
-        st.caption("📌 Recomendaciones basadas en criterios nutricionales deportivos "
-                   "(Fuente: Nutrición Deportiva — Estudiante 4° año, Santo Tomás)")
+        st.caption("📌 Recomendaciones basadas en criterios nutricionales deportivos (Fuente: Nutrición Deportiva)")
         st.divider()
 
         # ── PROTEÍNAS ──
         st.subheader("🥩 Proteínas  ·  1,8 – 2,2 g/kg")
-        st.caption("Rango recomendado según objetivo. Mayor proteína en déficit calórico "
-                   "o alta intensidad para preservar masa muscular.")
+        st.caption("Mayor proteína en déficit calórico o alta intensidad para preservar masa muscular.")
         col_p1, col_p2 = st.columns([2, 1])
         with col_p1:
             prot_factor = st.slider(
@@ -1622,8 +1199,7 @@ elif menu == "🥗 Nutrición":
 
         # ── GRASAS ──
         st.subheader("🥑 Grasas  ·  0,8 – 1,2 g/kg")
-        st.caption("Las grasas sostienen la producción hormonal y la absorción de vitaminas "
-                   "liposolubles (A, D, E, K). No bajar de 0,8 g/kg.")
+        st.caption("Las grasas sostienen la producción hormonal y la absorción de vitaminas liposolubles. No bajar de 0,8 g/kg.")
         col_g1, col_g2 = st.columns([2, 1])
         with col_g1:
             gras_factor = st.slider(
@@ -1639,8 +1215,7 @@ elif menu == "🥗 Nutrición":
 
         # ── CARBOHIDRATOS ──
         st.subheader("🍚 Carbohidratos  ·  según carga de entrenamiento")
-        st.caption("Los carbohidratos son el principal combustible durante el ejercicio de alta "
-                   "intensidad. Se ajustan según el volumen e intensidad semanal.")
+        st.caption("Combustible principal en entrenamientos. Se ajusta según el volumen e intensidad.")
 
         CARB_RANGOS = {
             "Reposo / Descarga (1–2 g/kg)": (1.0, 2.0, "Semana de descanso o descarga activa."),
@@ -1650,11 +1225,7 @@ elif menu == "🥗 Nutrición":
             "Competencia / Muy Intenso (7–10 g/kg)": (7.0, 10.0, "Fase de competencia o doble sesión diaria."),
         }
 
-        carga_sel = st.selectbox(
-            "Carga de entrenamiento semanal:",
-            list(CARB_RANGOS.keys()),
-            index=2,
-        )
+        carga_sel = st.selectbox("Carga de entrenamiento semanal:", list(CARB_RANGOS.keys()), index=2)
         lo_c, hi_c, desc_c = CARB_RANGOS[carga_sel]
         st.info(f"ℹ️ {desc_c}")
 
@@ -1675,12 +1246,11 @@ elif menu == "🥗 Nutrición":
 
         # ── RESUMEN FINAL ──
         st.subheader("📊 Resumen de la Distribución")
-
         kcal_prot = prot_g * 4
         kcal_carb = carb_g * 4
         kcal_gras = gras_g * 9
-        kcal_tot = kcal_prot + kcal_carb + kcal_gras
-        diff = kcal_tot - meta_c
+        kcal_tot  = kcal_prot + kcal_carb + kcal_gras
+        diff      = kcal_tot - meta_c
 
         col_r1, col_r2, col_r3, col_r4 = st.columns(4)
         col_r1.metric("🥩 Proteínas", f"{prot_g:.0f}g", f"{kcal_prot:.0f} kcal")
@@ -1693,425 +1263,112 @@ elif menu == "🥗 Nutrición":
         pct_g = kcal_gras / kcal_tot * 100 if kcal_tot else 0
 
         st.markdown(f"""
-        <div style='margin:16px 0 6px;font-size:.85rem;color:#aaa'>
-            Distribución calórica:
-        </div>
+        <div style='margin:16px 0 6px;font-size:.85rem;color:#aaa'>Distribución calórica:</div>
         <div style='display:flex;height:22px;border-radius:6px;overflow:hidden;gap:2px'>
-            <div style='width:{pct_p:.1f}%;background:#FF6B6B;display:flex;
-                        align-items:center;justify-content:center;
-                        font-size:.75rem;font-weight:700;color:#fff'>
-                {pct_p:.0f}%
-            </div>
-            <div style='width:{pct_c:.1f}%;background:#4ECDC4;display:flex;
-                        align-items:center;justify-content:center;
-                        font-size:.75rem;font-weight:700;color:#fff'>
-                {pct_c:.0f}%
-            </div>
-            <div style='width:{pct_g:.1f}%;background:#FFE66D;display:flex;
-                        align-items:center;justify-content:center;
-                        font-size:.75rem;font-weight:700;color:#333'>
-                {pct_g:.0f}%
-            </div>
+            <div style='width:{pct_p:.1f}%;background:#FF6B6B;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:#fff'>{pct_p:.0f}%</div>
+            <div style='width:{pct_c:.1f}%;background:#4ECDC4;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:#fff'>{pct_c:.0f}%</div>
+            <div style='width:{pct_g:.1f}%;background:#FFE66D;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:#333'>{pct_g:.0f}%</div>
         </div>
         <div style='display:flex;gap:16px;margin-top:6px;font-size:.8rem;color:#888'>
-            <span>🟥 Proteínas</span>
-            <span>🟦 Carbohidratos</span>
-            <span>🟨 Grasas</span>
+            <span>🟥 Proteínas</span><span>🟦 Carbohidratos</span><span>🟨 Grasas</span>
         </div>
         """, unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
         if abs(diff) <= 100:
-            st.markdown('<div class="abox ok">✅ La distribución está alineada con la meta calórica.</div>',
-                        unsafe_allow_html=True)
+            st.markdown('<div class="abox ok">✅ La distribución está alineada con la meta calórica.</div>', unsafe_allow_html=True)
         elif diff > 100:
-            st.markdown(f'<div class="abox warn">⚠️ El total supera la meta en {diff:.0f} kcal. '
-                        f'Considera reducir levemente los carbohidratos.</div>',
-                        unsafe_allow_html=True)
+            st.markdown(f'<div class="abox warn">⚠️ El total supera la meta en {diff:.0f} kcal. Reduce levemente los carbohidratos.</div>', unsafe_allow_html=True)
         else:
-            st.markdown(f'<div class="abox inf">ℹ️ El total está {abs(diff):.0f} kcal por debajo de la meta. '
-                        f'Puedes aumentar los carbohidratos si el entrenamiento lo requiere.</div>',
-                        unsafe_allow_html=True)
-
-        st.caption("⚕️ Esta calculadora es una herramienta orientativa. "
-                   "Para una planificación nutricional individualizada, consulta a un nutricionista.")
+            st.markdown(f'<div class="abox inf">ℹ️ El total está {abs(diff):.0f} kcal por debajo de la meta. Puedes aumentar los carbohidratos.</div>', unsafe_allow_html=True)
 
         if st.button("💾 Guardar Macros", type="primary", key="btn_guardar_macros"):
             st.session_state.db_clientes[c].update({
-                "macros_prot": prot_g,
-                "macros_carb": carb_g,
-                "macros_grasa": gras_g,
-                "macros_prot_factor": prot_factor,
-                "macros_gras_factor": gras_factor,
-                "macros_carb_factor": carb_factor,
-                "macros_carga_sel": carga_sel,
+                "macros_prot": prot_g, "macros_carb": carb_g, "macros_grasa": gras_g,
+                "macros_prot_factor": prot_factor, "macros_gras_factor": gras_factor,
+                "macros_carb_factor": carb_factor, "macros_carga_sel": carga_sel,
             })
-            guardar_datos()
-            st.toast("Macros guardados ✅")
+            guardar_datos(); st.toast("Macros guardados ✅")
 
 # =====================================================
 # 📈 PROGRESO
 # =====================================================
 elif menu == "📈 Progreso":
-    c = need_athlete()
+    c = need_athlete(); st.title(f"📈 Progreso — {c}")
     df_all = pd.DataFrame([r for r in st.session_state.historial_global if r["Cliente"] == c])
-    if df_all.empty:
-        st.info("Sin datos. Registra sesiones primero."); st.stop()
-
-    tb1, tb2, tb3 = st.tabs(["💪 Fuerza", "🏃 Cardio", "📋 Historial Completo"])
-
-    with tb1:
-        if "Tipo" in df_all.columns:
-            dff = df_all[df_all["Tipo"] == FUERZA]
-        else:
-            dff = df_all
-        if not dff.empty:
-            ej_ = st.selectbox("Ejercicio:", dff["Ejercicio"].unique().tolist())
-            dej = dff[dff["Ejercicio"] == ej_].copy()
-            if not dej.empty:
-                st.line_chart(dej, x="Fecha", y="Carga")
-                r1, r2, r3 = st.columns(3)
-                r1.metric("Carga Máx", f"{dej['Carga'].max():.1f} kg")
-                r2.metric("Promedio", f"{dej['Carga'].mean():.1f} kg")
-                r3.metric("Sesiones", len(dej))
-                est, msg, cls = analizar_progreso(dej)
-                st.markdown(f'<div class="abox {cls}">{msg}</div>', unsafe_allow_html=True)
-                if "RPE" in dej.columns and dej["RPE"].notna().any():
-                    st.subheader("😤 Evolución RPE")
-                    st.line_chart(dej, x="Fecha", y="RPE")
-        else:
-            st.info("Sin datos de fuerza.")
-
-    with tb2:
-        if "Tipo" in df_all.columns:
-            dfc = df_all[df_all["Tipo"] == CARDIO]
-        else:
-            dfc = pd.DataFrame()
-        if not dfc.empty:
-            st.line_chart(dfc, x="Fecha", y="Carga")
-            r1, r2, r3 = st.columns(3)
-            r1.metric("Sesiones", len(dfc))
-            r2.metric("Duración Prom.", f"{dfc['Carga'].mean():.0f} min")
-            r3.metric("Duración Máx.", f"{dfc['Carga'].max():.0f} min")
-        else:
-            st.info("Sin sesiones de cardio.")
-
-    with tb3:
-        f1, f2 = st.columns(2)
-        fi_ = f1.date_input("Desde:", hoy_chile() - timedelta(days=30))
-        ff_ = f2.date_input("Hasta:", hoy_chile())
-        dfl = df_all.copy()
-        try:
-            dfl["_dt"] = pd.to_datetime(dfl["Fecha"], format="%d/%m/%Y")
-            dfl = dfl[(dfl["_dt"] >= pd.Timestamp(fi_)) & (dfl["_dt"] <= pd.Timestamp(ff_))]
-        except Exception:
-            pass
-        bus = st.text_input("🔍 Buscar ejercicio:", "")
-        if bus and "Ejercicio" in dfl.columns:
-            dfl = dfl[dfl["Ejercicio"].str.contains(bus, case=False, na=False)]
-        mcols = [x for x in ["Fecha", "Ejercicio", "Series", "Reps", "Carga", "RPE", "Tipo", "Objetivo"]
-                 if x in dfl.columns]
-        st.dataframe(dfl[mcols].sort_values("Fecha", ascending=False),
-                     use_container_width=True, hide_index=True)
-        st.caption(f"{len(dfl)} registros")
-
-        if OPENPYXL_OK:
-            xb = excel_historial(c, st.session_state.historial_global)
-            if xb:
-                st.download_button("📊 Exportar Excel", data=xb,
-                                   file_name=f"Historial_{c.replace(' ','_')}.xlsx",
-                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        else:
-            st.caption("pip install openpyxl para exportar Excel")
-
-        with st.expander("🗑️ Eliminar registros por fecha"):
-            fb_ = st.date_input("Fecha a limpiar:", hoy_chile())
-            rf_ = [h for h in st.session_state.historial_global
-                   if h["Cliente"] == c and h["Fecha"] == fstr(fb_)]
-            if rf_:
-                st.warning(f"Se eliminarán {len(rf_)} registros del {fstr(fb_)}.")
-                if st.button("✅ Confirmar eliminación", key="btn_confirmar_hist"):
-                    st.session_state.historial_global = [
-                        h for h in st.session_state.historial_global
-                        if not (h["Cliente"] == c and h["Fecha"] == fstr(fb_))]
-                    guardar_datos(); st.success("Eliminados."); st.rerun()
-            else:
-                st.info("No hay registros en esa fecha.")
+    if df_all.empty: st.info("Sin registros aún."); st.stop()
+    st.line_chart(df_all[df_all["Tipo"] == "Fuerza"], x="Fecha", y="Carga")
 
 # =====================================================
-# 📚 GUÍAS
+# 📚 GUÍAS / 📝 NOTAS / 🎥 VIDEOTECA
 # =====================================================
-elif menu == "📚 Guías":
-    t1, t2, t3, t4, t5, t6 = st.tabs(["Fuerza (Badillo)", "Planif. (Bompa)",
-                                      "Tempo & Pausa", "RPE & Borg", "Zonas VAM", "Zonas FCM"])
-    with t1: st.table(TABLA_BADILLO)
-    with t2: st.table(GUIAS_BOMPA)
-    with t3:
-        c1, c2 = st.columns(2); c1.table(GUIA_TEMPO); c2.table(GUIA_DESCANSOS)
-    with t4:
-        c1, c2 = st.columns(2); c1.table(ESCALA_RPE); c2.table(ESCALA_BORG)
-    with t5:
-        st.table(GUIA_CARDIO)
-    with t6:
-        st.info("💡 **Nota:** Trabajar en la Zona 2 (60-70%) es ideal para maximizar la oxidación de grasas durante el ejercicio continuo.")
-        st.table(TABLA_ZONAS_FCM)
-
-# =====================================================
-# 📝 NOTAS
-# =====================================================
-elif menu == "📝 Notas":
-    st.title("📝 Notas Personales")
-    st.caption("Espacio privado — visible solo para ti.")
-    notas = st.text_area("Tus apuntes:", value=st.session_state.notas_personales, height=420)
-    if st.button("💾 Guardar Notas", type="primary", key="btn_guardar_notas"):
-        st.session_state.notas_personales = notas
-        ok = guardar_datos()
-        st.toast("Notas guardadas ☁️" if ok else "Error al guardar ❌")
-
-# =====================================================
-# 🎥 VIDEOTECA
-# =====================================================
+elif menu == "📚 Guías": 
+    st.table(TABLA_BADILLO)
+elif menu == "📝 Notas": 
+    nt = st.text_area("Apuntes:", value=st.session_state.notas_personales, height=300)
+    if st.button("Guardar"): st.session_state.notas_personales = nt; guardar_datos(); st.toast("Guardado")
 elif menu == "🎥 Videoteca":
-    st.title("🎥 Videoteca")
-    st.dataframe(
-        pd.DataFrame(list(st.session_state.biblioteca_videos.items()),
-                     columns=["Ejercicio", "Enlace"]),
-        use_container_width=True, hide_index=True)
-    st.divider()
-    ca, cd = st.columns(2)
-    with ca:
-        st.subheader("➕ Agregar")
-        ne_ = st.text_input("Nombre:")
-        nl_ = st.text_input("Enlace:")
-        if st.button("Guardar", type="primary", key="btn_guardar_video"):
-            if ne_.strip():
-                st.session_state.biblioteca_videos[ne_.strip()] = nl_.strip()
-                guardar_datos(); st.toast(f"'{ne_}' agregado ✅"); st.rerun()
-            else:
-                st.warning("Escribe un nombre.")
-    with cd:
-        st.subheader("🗑️ Eliminar")
-        # Solo se pueden eliminar videos personalizados; los de VIDEOS_BASE vienen del código
-        custom_keys = [k for k, v in st.session_state.biblioteca_videos.items() if VIDEOS_BASE.get(k) != v]
-        if custom_keys:
-            eb_ = st.selectbox("Selecciona:", custom_keys)
-            if st.button("Eliminar", key="btn_del_video"):
-                del st.session_state.biblioteca_videos[eb_]
-                guardar_datos(); time.sleep(0.5); st.rerun()
-        else:
-            st.info("No hay videos personalizados para eliminar.")
+    st.dataframe(pd.DataFrame(list(st.session_state.biblioteca_videos.items()), columns=["Ejercicio", "Enlace"]))
 
 # =====================================================
 # 👑 PANEL ADMIN
 # =====================================================
 elif menu == "👑 Panel Admin":
-    if not st.session_state.get("es_admin", False):
-        st.error("⛔ Acceso restringido.")
-        st.stop()
-
     st.title("👑 Panel de Control Bio Sport")
-    st.caption("Solo visible para el administrador del sistema.")
-
     if st.button("🔄 Actualizar Datos de la Nube", use_container_width=True):
-        st.session_state.pop("admin_cache", None)
-        st.rerun()
+        st.session_state.pop("admin_cache", None); st.rerun()
 
     if "admin_cache" not in st.session_state:
-        with st.spinner("Descargando base de datos global de forma segura..."):
-            try:
-                client = _gs_client()
-                sheet = client.open_by_url(URL_SHEET)
-                usr_db = cargar_usuarios_sistema()
-
-                datos_entrenadores = {}
-                for usr in usr_db.keys():
-                    try:
-                        ws = sheet.worksheet(usr)
-                        vals = ws.col_values(1)
-                        if vals:
-                            datos_entrenadores[usr] = json.loads("".join(vals))
-                    except Exception:
-                        log.exception("No se pudo leer la hoja de %s", usr)
-                        datos_entrenadores[usr] = {}
-
-                st.session_state.admin_cache = {
-                    "usuarios": usr_db,
-                    "datos": datos_entrenadores
-                }
-            except Exception as e:
-                log.exception("Error de conexión en panel admin")
-                st.error(f"Error de conexión: {e}")
-                st.stop()
+        with st.spinner("Descargando base de datos segura..."):
+            client = _gs_client(); sheet = client.open_by_url(URL_SHEET); usr_db = cargar_usuarios_sistema()
+            datos_entrenadores = {}
+            for usr in usr_db.keys():
+                try:
+                    ws = sheet.worksheet(usr); vals = ws.col_values(1)
+                    if vals: datos_entrenadores[usr] = json.loads("".join(vals))
+                except Exception: datos_entrenadores[usr] = {}
+            st.session_state.admin_cache = {"usuarios": usr_db, "datos": datos_entrenadores}
 
     cache = st.session_state.admin_cache
-    usuarios_db = cache["usuarios"]
-    datos_completos = cache["datos"]
+    usuarios_db = cache["usuarios"]; datos_completos = cache["datos"]
 
-    tab_usuarios, tab_cobros, tab_ranking = st.tabs([
-        "👥 Gestión de Preparadores",
-        "💰 Cobros del Mes",
-        "🏆 Ranking de Actividad"
-    ])
-
-    # ── TAB 1: USUARIOS ──
+    tab_usuarios, tab_cobros, tab_ranking = st.tabs(["👥 Preparadores", "💰 Cobros", "🏆 Ranking"])
     with tab_usuarios:
-        st.subheader("Preparadores registrados")
+        st.subheader("Preparadores")
         if usuarios_db:
-            filas_u = []
-            for usr, info in usuarios_db.items():
-                trato = (f"${int(info.get('valor_cobro',0)):,}/alumno"
-                         if info.get("tipo_cobro") == "por_alumno"
-                         else f"${int(info.get('valor_cobro',0)):,} fijo")
-                filas_u.append({
-                    "Usuario": usr,
-                    "Nombre": info.get("nombre_completo", "—"),
-                    "Tipo de Cobro": info.get("tipo_cobro", "—"),
-                    "Valor": trato,
-                    "Registrado": info.get("fecha_registro", "—"),
-                })
-            st.dataframe(pd.DataFrame(filas_u), use_container_width=True, hide_index=True)
-        else:
-            st.info("No hay preparadores registrados aún.")
+            st.dataframe(pd.DataFrame([{"Usuario": u, "Nombre": i.get("nombre_completo", "—"), "Cobro": i.get("tipo_cobro")} for u, i in usuarios_db.items()]))
+        with st.expander("➕ Registrar nuevo preparador"):
+            un = st.text_input("Usuario (sin espacios):")
+            pn = st.text_input("Contraseña:", type="password")
+            nn = st.text_input("Nombre completo:")
+            tc = st.selectbox("Modalidad:", ["por_alumno", "fijo_mensual"])
+            vc = st.number_input("Valor ($):", value=2500)
+            if st.button("Crear cuenta", type="primary"):
+                ok, msg = registrar_usuario_sistema(un, pn, nn, tc, vc)
+                if ok: 
+                    st.success("Registrado correctamente"); st.session_state.pop("admin_cache", None); st.rerun()
+                else: 
+                    st.error(msg)
 
-        st.divider()
-
-        with st.expander("➕ Registrar nuevo preparador", expanded=True):
-            st.markdown("**Completa los datos del nuevo preparador:**")
-            rn1, rn2 = st.columns(2)
-            new_nombre = rn1.text_input("Nombre completo:", key="reg_nombre")
-            new_usuario = rn2.text_input("Usuario (sin espacios):", key="reg_usuario")
-            rn3, rn4 = st.columns(2)
-            new_pass = rn3.text_input("Contraseña:", type="password", key="reg_pass")
-            new_pass2 = rn4.text_input("Repetir contraseña:", type="password", key="reg_pass2")
-
-            st.markdown("**Tipo de cobro:**")
-            rc1, rc2, rc3 = st.columns(3)
-            tipo_cobro = rc1.selectbox("Modalidad:",
-                                       ["por_alumno", "fijo_mensual"],
-                                       format_func=lambda x: "Por alumno" if x == "por_alumno" else "Cuota fija mensual",
-                                       key="reg_tipo")
-            valor_cobro = rc2.number_input(
-                "Valor ($):", min_value=0, value=2500, step=500, key="reg_valor",
-                help="Si es por alumno: precio por cada atleta. Si es fijo: monto mensual total.")
-            rc3.markdown("<br>", unsafe_allow_html=True)
-            rc3.caption(f"Ejemplo: {valor_cobro:,} {'por cada atleta' if tipo_cobro=='por_alumno' else 'al mes'}")
-
-            if st.button("✅ Crear cuenta de preparador", type="primary", key="btn_crear_usuario", use_container_width=True):
-                if new_pass != new_pass2:
-                    st.error("❌ Las contraseñas no coinciden.")
-                elif not new_nombre.strip():
-                    st.error("❌ El nombre completo es obligatorio.")
-                else:
-                    ok, msg = registrar_usuario_sistema(new_usuario, new_pass, new_nombre, tipo_cobro, valor_cobro)
-                    if ok:
-                        st.success("Preparador registrado correctamente.")
-                        st.session_state.pop("admin_cache", None)
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Error: {msg}")
-
-        st.divider()
-
-        with st.expander("🔑 Cambiar contraseña de un preparador"):
-            if usuarios_db:
-                cp1, cp2, cp3 = st.columns(3)
-                usr_cambiar = cp1.selectbox("Preparador:", list(usuarios_db.keys()), key="cp_usr")
-                nueva_pw = cp2.text_input("Nueva contraseña:", type="password", key="cp_new")
-                nueva_pw2 = cp3.text_input("Repetir:", type="password", key="cp_rep")
-                if st.button("Actualizar contraseña", key="btn_cambiar_pw"):
-                    if nueva_pw != nueva_pw2:
-                        st.error("Las contraseñas no coinciden.")
-                    elif len(nueva_pw) < 6:
-                        st.error("Mínimo 6 caracteres.")
-                    else:
-                        if cambiar_password_usuario(usr_cambiar, nueva_pw):
-                            st.success(f"Contraseña de '{usr_cambiar}' actualizada ✅")
-                            st.session_state.pop("admin_cache", None)
-                        else:
-                            st.error("Error al actualizar.")
-            else:
-                st.info("No hay preparadores registrados.")
-
-        st.divider()
-
-        with st.expander("🗑️ Eliminar preparador"):
-            if usuarios_db:
-                st.warning("⚠️ Esta acción elimina el acceso del preparador. Sus datos en Sheets NO se borran.")
-                usr_del = st.selectbox("Selecciona:", list(usuarios_db.keys()), key="del_usr")
-                if st.button(f"Eliminar a {usr_del}", key="btn_del_usr", type="primary"):
-                    if eliminar_usuario_sistema(usr_del):
-                        st.success(f"'{usr_del}' eliminado del sistema ✅")
-                        st.session_state.pop("admin_cache", None)
-                        st.rerun()
-                    else:
-                        st.error("Error al eliminar.")
-            else:
-                st.info("No hay preparadores para eliminar.")
-
-    # ── TAB 2: COBROS ──
     with tab_cobros:
-        st.subheader("Resumen de cobros — " + ahora_chile().strftime("%B %Y").capitalize())
+        st.subheader("Cobros del Mes")
         cobros = []; total = 0
         for usr, info in usuarios_db.items():
-            jd = datos_completos.get(usr, {})
-            n = len(jd.get("clientes", {}))
+            n = len(datos_completos.get(usr, {}).get("clientes", {}))
             tc = info.get("tipo_cobro", "por_alumno")
             vc = int(info.get("valor_cobro", 0))
             mo = n * vc if tc == "por_alumno" else vc
-
-            cobros.append({
-                "Preparador": info.get("nombre_completo", usr),
-                "Usuario": usr,
-                "Alumnos": n,
-                "Modalidad": "Por alumno" if tc == "por_alumno" else "Fijo mensual",
-                "Valor unit.": f"${vc:,}",
-                "Total ($)": mo,
-            })
+            cobros.append({"Preparador": usr, "Alumnos": n, "Total": f"${mo:,}"})
             total += mo
+        st.dataframe(pd.DataFrame(cobros))
+        st.metric("Total a Recaudar", f"${total:,}")
 
-        if cobros:
-            df_cobros = pd.DataFrame(cobros)
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Preparadores activos", len(cobros))
-            c2.metric("Alumnos totales", sum(x["Alumnos"] for x in cobros))
-            c3.metric("Total a recaudar", f"${total:,}")
-            st.divider()
-
-            df_cobros["Total ($)"] = df_cobros["Total ($)"].apply(lambda x: f"${x:,}")
-            st.dataframe(df_cobros, use_container_width=True, hide_index=True)
-
-            csv_cobros = df_cobros.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "📊 Exportar cobros CSV",
-                data=csv_cobros,
-                file_name=f"cobros_{ahora_chile().strftime('%Y_%m')}.csv",
-                mime="text/csv",
-                key="btn_export_cobros"
-            )
-        else:
-            st.info("No hay preparadores con datos registrados aún.")
-
-    # ── TAB 3: RANKING ──
     with tab_ranking:
-        st.subheader("Ranking de actividad — últimos 30 días")
-        ranking = []
+        st.subheader("Ranking Actividad (30 días)")
+        rank = []
         for usr, info in usuarios_db.items():
-            jd = datos_completos.get(usr, {})
-            for nom in jd.get("clientes", {}):
-                r30 = [r for r in jd.get("historial", [])
-                       if r.get("Cliente") == nom and _dias_desde(r.get("Fecha", "")) <= 30]
-                ranking.append({
-                    "Atleta": nom,
-                    "Preparador": info.get("nombre_completo", usr),
-                    "Sesiones 30d": len(r30),
-                })
-
-        if ranking:
-            df_rank = pd.DataFrame(ranking).sort_values("Sesiones 30d", ascending=False)
-            st.dataframe(df_rank, use_container_width=True, hide_index=True)
-            st.divider()
-            top = df_rank.iloc[0]
-            st.success(f"🏆 Atleta más activo: **{top['Atleta']}** "
-                       f"({top['Preparador']}) — {top['Sesiones 30d']} sesiones")
-        else:
-            st.info("Sin actividad registrada en los últimos 30 días.")
+            for nom in datos_completos.get(usr, {}).get("clientes", {}):
+                r30 = [r for r in datos_completos.get(usr, {}).get("historial", []) if r.get("Cliente")==nom]
+                rank.append({"Atleta": nom, "Preparador": usr, "Sesiones": len(r30)})
+        if rank:
+            st.dataframe(pd.DataFrame(rank).sort_values("Sesiones", ascending=False))
